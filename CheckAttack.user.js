@@ -522,11 +522,11 @@ function display() {
     {
         if ( count == "1")
         {
-            htmlCount += count +' attaque :  <br />' + coordByNbAttaque[count] + ' <br/>';
+            htmlCount += count +' '+captionAttack+' :  <br />' + coordByNbAttaque[count] + ' <br/>';
         }
         else if (count < maxRaid )
         {
-            htmlCount += count +' attaques :  <br />' + coordByNbAttaque[count] + ' <br/>';
+            htmlCount += count +' '+captionAttacks+' :  <br />' + coordByNbAttaque[count] + ' <br/>';
         }
         else
         {
