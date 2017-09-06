@@ -1,6 +1,7 @@
 // ==UserScript==
 // @name        CheckAttack
 // @namespace   GeneralAnasazi
+// @author	GeneralAnasazi
 // @description Plug in anti bash
 // @include     *ogame.gameforge.com/game/*
 // @version     3.0
