@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name        CheckAttaque
-// @namespace   groslapin_s_136_fr
-// @description Plug in anty bash
+// @name        CheckAttack
+// @namespace   GeneralAnasazi
+// @description Plug in anti bash
 // @include     *ogame.gameforge.com/game/*
 // @version     3.0
 // @grant       None
