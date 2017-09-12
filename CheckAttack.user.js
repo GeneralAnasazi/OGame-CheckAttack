@@ -4,7 +4,7 @@
 // @author	GeneralAnasazi
 // @description Plug in anti bash
 // @include     *ogame.gameforge.com/game/*
-// @version     3.0
+// @version     3.1
 // @grant       None
 
 // ==/UserScript==
@@ -153,6 +153,15 @@ function isAppendedToday(date, isSpyReport)
     return date > lastCheck;
 }
 
+function createDiv(id, className)
+{
+    var div = document.createElement('div');
+    if (id !== '')
+        div.id = id;
+    div.className = className;
+    return div;
+}
+
 function getDateFromMessage(msg, isSpy)
 {
     var result = new Date(2000, 0, 1);
@@ -201,8 +210,10 @@ function getDefender(msg)
             result = result.split(': ')[1].replace('(', '').replace(')', '');
         }
     }
-    if (result == 'Unknown' && defenderDiv)
+    if (result == 'Unknown' && defenderDiv[0])
         log(defenderDiv);
+    else if (result == 'Unknown')
+        log(msg);
     return result;
 }
 
@@ -355,25 +366,24 @@ function searchInactivePlayers()
 function loadInfo()
 {
 
-	// display a loading gif
-	var info = document.createElement("div");
-	info.className="adviceWrapper";
-	info.innerHTML='<div style="algin:center;text-align: center;"><img src="https://raw.githubusercontent.com/GrosLapin/scriptOgame/master/ajax-loader.gif" /></div>';
-	info.id="id_check_attaque";
+    // display a loading gif
+    var info = document.createElement("div");
+    info.className="adviceWrapper";
+    info.innerHTML='<div style="algin:center;text-align: center;"><img src="https://raw.githubusercontent.com/GrosLapin/scriptOgame/master/ajax-loader.gif" /></div>';
+    info.id="id_check_attaque";
 
-	var link = document.getElementById("links");
-	var conteneur =  document.getElementById('id_check_attaque');
-	if (typeof(conteneur) == 'undefined' || conteneur === null)
-	{
-		link.appendChild(info);
-	}
-	else
-	{
-		link.replaceChild(info,conteneur);
-	}
+    var link = document.getElementById("links");
+    var conteneur =  document.getElementById('id_check_attaque');
+    if (typeof(conteneur) == 'undefined' || conteneur === null)
+    {
+        link.appendChild(info);
+    }
+    else
+    {
+        link.replaceChild(info,conteneur);
+    }
 
-
-	// seting some constant like the number of page in the message section
+    // seting some constant like the number of page in the message section
     var div =  document.getElementById("verificationAttaque");
     var message = getMessage(1, TABID_COMBAT_REPORT);
     div.innerHTML = message;
@@ -402,13 +412,13 @@ function loadInfo()
     {
         if (!message)
             break;
-		// store the HTML in hidden div
+        // store the HTML in hidden div
         div.innerHTML = message;
         var lutab = document.getElementsByClassName('ctn_with_trash');
         var lu = lutab[lutab.length -1];
         var collEnfants = document.getElementsByClassName('msg');
 
-		// 1 of 2 child are not of your bisness, and the first is the < << >> > button so start at 3 and +2
+        // 1 of 2 child are not of your bisness, and the first is the < << >> > button so start at 3 and +2
         for (var i = 0; i < collEnfants.length; i++)
         {
             var msg = collEnfants[i];
@@ -417,7 +427,9 @@ function loadInfo()
             if (cpt == 1 && i === 0)
                 lastCheck = date;
 
-            if ((inactivePlayers[defenderName] != 'i' || inactivePlayers == {}) && defenderName != playerName)
+            if ((inactivePlayers[defenderName] != 'i' || inactivePlayers == {}) &&
+                // exclude attacks of your self
+                defenderName != playerName)
             {
                 if (isAppendedToday(date, false))
                 {
@@ -481,22 +493,22 @@ function display() {
 
     for (var coord in tabCoord )
     {
-        var defenderSpan = '<span style="font-weight: bold; color: rgb(0, 128, 0); font-size: 11px;">'+tabDefenderNames[coord]+': </span>';
+        var defenderSpan = '<span style="font-weight: bold; color: grey;">  '+tabDefenderNames[coord]+'</span>';
 
         var coordHeure = '';
         if (tabCoordHeures)
             coordHeure = tabCoordHeures[coord];
-        // pour l'affichage en div
+
         if (typeof coordByNbAttaque[tabCoord[coord]] == 'undefined')
         {
-            coordByNbAttaque[tabCoord[coord]] = defenderSpan+'<a title="'+coordHeure+'" href="'+coordToUrl(coord)+'" >'+coord +'</a><br/> ';
+            coordByNbAttaque[tabCoord[coord]] = '<a title="'+coordHeure+'" href="'+coordToUrl(coord)+'" >'+coord +'</a>'+defenderSpan+'<br/> ';
         }
         else
         {
-            coordByNbAttaque[tabCoord[coord]] +=defenderSpan+'<a title="'+coordHeure+'" href="'+coordToUrl(coord)+'">'+coord +'</a><br/>  ';
+            coordByNbAttaque[tabCoord[coord]] +='<a title="'+coordHeure+'" href="'+coordToUrl(coord)+'">'+coord +'</a>'+defenderSpan+'<br/>  ';
         }
 
-        // pour l'alert
+        // show alert
         if ( tabCoord[coord] >= maxRaid )
         {
             isGood =false;
@@ -504,20 +516,23 @@ function display() {
 
     }
 
-    var htmlCount = '<div ><span class="overlay" style="color: #FFF;text-decoration: none;font: 11px Verdana,Arial,Helvetica,sans-serif;width: 150px;text-align: center;background: transparent -moz-linear-gradient(center top , #171D23 0px, #101419 100%) repeat scroll 0% 0%;border: 1px solid #3F3D13;border-radius: 5px;padding: 5px;display: block;">';
+    //linear-gradient(to bottom, #959595 0%,#0d0d0d 10%,#010101 70%,#0a0a0a 80%,#4e4e4e 90%,#383838 95%,#1b1b1b 100%)
+    var htmlCount = '<div class="textCenter" style="font-weight: bold;background: linear-gradient(to bottom, #959595 0%,#0d0d0d 7%,#010101 85%,#0a0a0a 91%,#4e4e4e 93%,#383838 97%,#1b1b1b 100%);' +
+        'border: 2px solid black;border-radius: 5px;padding: 1px;text-align: center;color: #4f85bb;height:38px;display: block; font-size: 14px;padding: 7px">';
 
     if ( isGood )
     {
-        htmlCount += '<span style="font-weight: bold; color: rgb(0, 128, 0); font-size: 16px;">'+title1+'</span><br/>';
-        htmlCount += '<span style="font-weight: bold; color: rgb(0, 128, 0); font-size: 11px;">'+title2+'</span><br/>';
-        htmlCount += '<br/><br/>';
+        htmlCount += title1 + '<br/>';
+        htmlCount += '<span style="color: #4f85bb; font-size: 11px;">'+title2+'</span><br/>';
     }
     else
     {
-        htmlCount += '<span style="font-weight: bold; color: rgb(128, 0, 0); font-size: 16px;">'+title3+'</span>';
-        htmlCount += '<br/><br/>';
+        htmlCount += '<span style="font-weight: bold; color: rgb(128, 0, 0); font-size: 14px;">'+title3+'</span>';
     }
+    htmlCount += '</div>';
 
+    // start content div
+    htmlCount += '<div class="attackContent" style="font-size: 9px;color: #4f85bb;font-weight: bold;background: #111111;padding: 8px;">';
     for (var count in coordByNbAttaque )
     {
         if ( count == "1")
@@ -530,18 +545,20 @@ function display() {
         }
         else
         {
-            htmlCount += '<span style="font-weight: bold; color: rgb(128, 0, 0); font-size: 11px;">';
+            htmlCount += '<span style="font-weight: bold; color: rgb(128, 0, 0);">';
             htmlCount += count +' '+captionAttacks+' :  <br />' + coordByNbAttaque[count] + ' <br/>';
             htmlCount +='</span>';
         }
     }
 
-    htmlCount += '</span></div>';
+    htmlCount += '</div>';
 
-    var info = document.createElement("div");
-    info.className="adviceWrapper";
+    var info = createDiv("id_check_attaque", "content-box-s");
+    info.style.width = '170px';
+    info.style.borderRadius = '5px';
+    info.style.border = '1px solid black';
     info.innerHTML=htmlCount;
-    info.id="id_check_attaque";
+
 
     var link = document.getElementById("links");
     var conteneur =  document.getElementById('id_check_attaque');
