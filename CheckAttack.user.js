@@ -4,7 +4,7 @@
 // @author	GeneralAnasazi
 // @description Plug in anti bash
 // @include     *ogame.gameforge.com/game/*
-// @version     3.1.1
+// @version     3.1.2
 // @grant       None
 
 // ==/UserScript==
@@ -24,17 +24,14 @@ const RESET_COOKIES = false;
 
 // globale vars
 var language = document.getElementsByName('ogame-language')[0].content;
-var playerId = document.getElementsByName('ogame-player-id')[0].content;
 var playerName = document.getElementsByName('ogame-player-name')[0].content;
-var server  = document.getElementsByName('ogame-universe')[0].content;
+
 // settings object
 var settings = {
     // last readed message from combat report
     lastCheckCombatReport: getBashTimespan(),
-    getLastCheckCombatReport: function() {return new Date(this.lastCheckCombatReport);},
     // last readed message from spy report
     lastCheckSpyReport: getBashTimespan(),
-    getLastCheckSpyReport: function() {return new Date(this.lastCheckSpyReport);},
     load: function() {
         var obj = getCookie('tabSettings');
         if (obj != {})
@@ -128,10 +125,13 @@ function decOldTimes(coordHours, coords)
         if (coordHours.hasOwnProperty(coord))
         {
             var dates = coordHours[coord].split('\n');
+            log(dates);
             var title = '';
-            for (var i = 0; i < dates.length; i++)
+            for (var i = 0; i < dates.length-1; i++) // there is on empty item on the end of each array
             {
-                if (dates[i] !== '' && titleToDate(dates[i]) > bashDate)
+                var date = titleToDate(dates[i]);
+                log('titleToDate: ' + date + ' inc. Date: ' + dates[i]);
+                if (dates[i] !== '' && date > bashDate)
                 {
                     title += dates[i] + '\n';
                 }
@@ -168,7 +168,7 @@ function titleToDate(title)
     }
     catch (ex)
     {
-        // do nothing we will switch to the new format
+        console.log('Error on titleToDate('+title+'): ' + ex);
     }
     return result;
 }
@@ -545,11 +545,11 @@ function display() {
 
         if (typeof coordByNbAttaque[tabCoord[coord]] == 'undefined')
         {
-            coordByNbAttaque[tabCoord[coord]] = '<a title="'+coordHeure+'" href="'+coordToUrl(coord)+'" >'+coord +'</a>'+defenderSpan+'<br/> ';
+            coordByNbAttaque[tabCoord[coord]] = '<a title="'+coordHeure+' (UTC)" href="'+coordToUrl(coord)+'" >'+coord +'</a>'+defenderSpan+'<br/> ';
         }
         else
         {
-            coordByNbAttaque[tabCoord[coord]] +='<a title="'+coordHeure+'" href="'+coordToUrl(coord)+'">'+coord +'</a>'+defenderSpan+'<br/>  ';
+            coordByNbAttaque[tabCoord[coord]] +='<a title="'+coordHeure+' (UTC)" href="'+coordToUrl(coord)+'">'+coord +'</a>'+defenderSpan+'<br/>  ';
         }
 
         // show alert
