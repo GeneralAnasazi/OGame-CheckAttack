@@ -545,11 +545,11 @@ function display() {
 
         if (typeof coordByNbAttaque[tabCoord[coord]] == 'undefined')
         {
-            coordByNbAttaque[tabCoord[coord]] = '<a title="'+coordHeure+' (UTC)" href="'+coordToUrl(coord)+'" >'+coord +'</a>'+defenderSpan+'<br/> ';
+            coordByNbAttaque[tabCoord[coord]] = '<a title="'+coordHeure+' (time in UTC)" href="'+coordToUrl(coord)+'" >'+coord +'</a>'+defenderSpan+'<br/> ';
         }
         else
         {
-            coordByNbAttaque[tabCoord[coord]] +='<a title="'+coordHeure+' (UTC)" href="'+coordToUrl(coord)+'">'+coord +'</a>'+defenderSpan+'<br/>  ';
+            coordByNbAttaque[tabCoord[coord]] +='<a title="'+coordHeure+' (time in UTC)" href="'+coordToUrl(coord)+'">'+coord +'</a>'+defenderSpan+'<br/>  ';
         }
 
         // show alert
