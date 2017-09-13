@@ -10,15 +10,19 @@
 // ==/UserScript==
 
 // constants
+const COOKIE_EXPIRES_DAYS = 1;
 const TABID_SPY = 20;
 const TABID_COMBAT_REPORT = 21; // combat report
+
+// debug consts
+const DEBUG = false; // set it to true enable debug messages -> log(msg)
+const RESET_COOKIES = false;
 
 // **************************************************************************
 
 //TODO: "read getMessage asyncron"
 
 // globale vars
-var debug = false; // set it to true enable debug messages -> log(msg)
 var language = document.getElementsByName('ogame-language')[0].content;
 var playerId = document.getElementsByName('ogame-player-id')[0].content;
 var playerName = document.getElementsByName('ogame-player-name')[0].content;
@@ -26,10 +30,10 @@ var server  = document.getElementsByName('ogame-universe')[0].content;
 // settings object
 var settings = {
     // last readed message from combat report
-    lastCheckCombatReport: getToday(),
+    lastCheckCombatReport: getBashTimespan(),
     getLastCheckCombatReport: function() {return new Date(this.lastCheckCombatReport);},
     // last readed message from spy report
-    lastCheckSpyReport: getToday(),
+    lastCheckSpyReport: getBashTimespan(),
     getLastCheckSpyReport: function() {return new Date(this.lastCheckSpyReport);},
     load: function() {
         var obj = getCookie('tabSettings');
@@ -46,7 +50,7 @@ var settings = {
         }
     },
     write: function() {
-        $.cookie('tabSettings', JSON.stringify(this), {expires: 366});
+        $.cookie('tabSettings', JSON.stringify(this), {expires: 60}); // the settings will be stored longer
     }
 }; // cookie tabSettings
 
@@ -80,7 +84,7 @@ function translate()
 // log a message to console, if debug is true
 function log(msg)
 {
-    if (debug)
+    if (DEBUG)
         console.log(msg);
 }
 
@@ -116,24 +120,57 @@ function coordToUrl(coord)
 	 return '/game/index.php?page=galaxy&galaxy='+coordTab[0]+'&system='+coordTab[1]+'&position='+coordTab[2] ;
 }
 
+function decOldTimes(coordHours, coords)
+{
+    var bashDate = getBashTimespan();
+    for (var coord in coordHours)
+    {
+        if (coordHours.hasOwnProperty(coord))
+        {
+            var dates = coordHours[coord].split('\n');
+            var title = '';
+            for (var i = 0; i < dates.length; i++)
+            {
+                if (dates[i] !== '' && titleToDate(dates[i]) > bashDate)
+                {
+                    title += dates[i] + '\n';
+                }
+                else if (dates[i] !== '')
+                {
+                    coords[coord]--;
+                }
+
+            }
+            coordHours[coord] = title;
+        }
+    }
+}
+
+function getBashTimespan()
+{
+    var date = new Date();
+    date.setDate(date.getDate() - 1);
+    return date;
+}
+
 function formateTitle(date,cpt)
 {
-    var hours   = date.getHours();
-    var minutes  = date.getMinutes();
-	return hours+'h'+minutes+' le '+ date + ' (p '+cpt+')';
+	return date.toISOString(); // ISO Date
+    //return hours+'h'+minutes+' le '+ date + ' (p '+cpt+')';
 }
 
-function getToday()
+function titleToDate(title)
 {
-    var result = new Date();
-    result.setDate(result.getDate());
-    result.setHours(0,0,0,0);
+    var result = getBashTimespan();
+    try
+    {
+        result = new Date(title);
+    }
+    catch (ex)
+    {
+        // do nothing we will switch to the new format
+    }
     return result;
-}
-
-function isYesterdayOrBefore(date)
-{
-    return getToday() > date;
 }
 
 function isAppendedToday(date, isSpyReport)
@@ -142,7 +179,7 @@ function isAppendedToday(date, isSpyReport)
     if (isSpyReport)
         lastCheckSettings = settings.lastCheckSpyReport;
 
-    var lastCheck = getToday();
+    var lastCheck = getBashTimespan();
     // performance boost
     if (lastCheck < lastCheckSettings)
     {
@@ -240,21 +277,17 @@ function getCookie(name)
 
 function resetCookies()
 {
-    // on each new Date the cookies has to be cleared
-    var today = getToday();
-    if ((today > settings.lastCheckCombatReport && today > settings.lastCheckSpyReport))
-    {
-        log('reset cookies');
-        $.cookie('tabCoord', JSON.stringify({}), {expires: 1});
-        $.cookie('tabCoordHeures', JSON.stringify({}), {expires: 1});
-        $.cookie('tabDefenderNames', JSON.stringify({}), {expires: 1});
-        $.cookie('tabInactivePlayers', JSON.stringify({}), {expires: 1});
+    // resetCookies is only for debug operations or to transfor old date format to the new one
+    log('reset cookies');
+    $.cookie('tabCoord', JSON.stringify({}), {expires: COOKIE_EXPIRES_DAYS});
+    $.cookie('tabCoordHeures', JSON.stringify({}), {expires: COOKIE_EXPIRES_DAYS});
+    $.cookie('tabDefenderNames', JSON.stringify({}), {expires: COOKIE_EXPIRES_DAYS});
+    $.cookie('tabInactivePlayers', JSON.stringify({}), {expires: COOKIE_EXPIRES_DAYS});
 
-        // to prevent that the cooies will be reseted every time
-        settings.lastCheckCombatReport = today;
-        settings.lastCheckSpyReport = today;
-        settings.write();
-    }
+    // to prevent that the cooies will be reseted every time
+    settings.lastCheckCombatReport = getBashTimespan();
+    settings.lastCheckSpyReport = getBashTimespan();
+    settings.write();
 }
 
 // initialize the script and load some informations from existing cookies
@@ -280,9 +313,9 @@ function startScript()
     translate();
     settings.load();
     log(settings);
-    //settings.write();
-    //log(settings);
-    resetCookies();
+
+    if (RESET_COOKIES) // for debug
+        resetCookies();
 
     var tabCoordCookie = $.cookie("tabCoord");
     if (typeof(tabCoordCookie) != 'undefined')
@@ -304,7 +337,7 @@ function searchInactivePlayers()
     var li = litab[litab.length -1];
     var pageCount = li.getAttribute("data-page");
     var ok = true;
-    var lastCheck = getToday();
+    var lastCheck = getBashTimespan();
 
     for (var page = 1; page <= pageCount; page++)
     {
@@ -359,7 +392,7 @@ function searchInactivePlayers()
     settings.lastCheckSpyReport = lastCheck;
     log(settings);
     log('end searchInactivePlayers');
-    $.cookie("tabInactivePlayers", JSON.stringify(inactivePlayers), {expires: 1});
+    $.cookie("tabInactivePlayers", JSON.stringify(inactivePlayers), {expires: COOKIE_EXPIRES_DAYS});
     return lastCheck;
 }
 
@@ -400,9 +433,20 @@ function loadInfo()
     var tabCoord = getCookie("tabCoord");
     var tabCoordHeures = getCookie("tabCoordHeures");
     var tabDefenderNames = getCookie("tabDefenderNames");
-    var lastCheck = getToday();
+    var lastCheck = getBashTimespan();
+
+    // check for the old version and transform it
+    var coord = Object.keys(tabCoordHeures)[0];
+    if (tabCoordHeures[coord] && tabCoordHeures[coord].includes(' le '))
+    {
+        resetCookies();
+        tabCoord = {};
+        tabCoordHeures = {};
+        tabDefenderNames = {};
+    }
 
 
+    decOldTimes(tabCoordHeures, tabCoord);
     searchInactivePlayers();
     var inactivePlayers = getCookie("tabInactivePlayers");
     log(inactivePlayers);
@@ -435,7 +479,7 @@ function loadInfo()
                 {
                     log('Append Date(loadInfo): ' + date + '  Settings: ' + settings.lastCheckCombatReport);
                     var locTab = msg.getElementsByClassName('txt_link');
-                    var coord = locTab[0].innerHTML;
+                    coord = locTab[0].innerHTML;
                     if (!tabCoord[coord])
                     {
                         tabCoord[coord] = 1;
@@ -462,9 +506,9 @@ function loadInfo()
     }
     // end of collecting data time for some display
     log('CoordsToCookies');
-    $.cookie("tabCoord", JSON.stringify(tabCoord), {expires: 1});
-    $.cookie("tabCoordHeures", JSON.stringify(tabCoordHeures), {expires: 1});
-    $.cookie("tabDefenderNames", JSON.stringify(tabDefenderNames), {expires: 1});
+    $.cookie("tabCoord", JSON.stringify(tabCoord), {expires: COOKIE_EXPIRES_DAYS});
+    $.cookie("tabCoordHeures", JSON.stringify(tabCoordHeures), {expires: COOKIE_EXPIRES_DAYS});
+    $.cookie("tabDefenderNames", JSON.stringify(tabDefenderNames), {expires: COOKIE_EXPIRES_DAYS});
     // write settings
     settings.lastCheckCombatReport = lastCheck;
     settings.write();
