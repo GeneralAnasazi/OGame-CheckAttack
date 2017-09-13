@@ -4,7 +4,7 @@
 // @author	GeneralAnasazi
 // @description Plug in anti bash
 // @include     *ogame.gameforge.com/game/*
-// @version     3.1
+// @version     3.1.1
 // @grant       None
 
 // ==/UserScript==
