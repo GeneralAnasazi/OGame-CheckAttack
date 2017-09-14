@@ -117,7 +117,7 @@ function coordToUrl(coord)
 	 return '/game/index.php?page=galaxy&galaxy='+coordTab[0]+'&system='+coordTab[1]+'&position='+coordTab[2] ;
 }
 
-function decOldTimes(coordHours, coords)
+function decOldTimes(coordHours, coords, defenders)
 {
     var bashDate = getBashTimespan();
     for (var coord in coordHours)
@@ -125,7 +125,6 @@ function decOldTimes(coordHours, coords)
         if (coordHours.hasOwnProperty(coord))
         {
             var dates = coordHours[coord].split('\n');
-            log(dates);
             var title = '';
             for (var i = 0; i < dates.length-1; i++) // there is on empty item on the end of each array
             {
@@ -142,6 +141,13 @@ function decOldTimes(coordHours, coords)
 
             }
             coordHours[coord] = title;
+            // delete empty ones
+            if (coords[coord] === 0)
+            {
+                delete coords[coord];
+                delete coordHours[coord];
+                delete defenders[coord];
+            }
         }
     }
 }
@@ -437,7 +443,7 @@ function loadInfo()
 
     // check for the old version and transform it
     var coord = Object.keys(tabCoordHeures)[0];
-    if (tabCoordHeures[coord] && tabCoordHeures[coord].includes(' le '))
+    if (coord && tabCoordHeures[coord] && tabCoordHeures[coord].includes(' le '))
     {
         resetCookies();
         tabCoord = {};
@@ -446,7 +452,7 @@ function loadInfo()
     }
 
 
-    decOldTimes(tabCoordHeures, tabCoord);
+    decOldTimes(tabCoordHeures, tabCoord, tabDefenderNames);
     searchInactivePlayers();
     var inactivePlayers = getCookie("tabInactivePlayers");
     log(inactivePlayers);
@@ -459,7 +465,6 @@ function loadInfo()
         // store the HTML in hidden div
         div.innerHTML = message;
         var lutab = document.getElementsByClassName('ctn_with_trash');
-        var lu = lutab[lutab.length -1];
         var collEnfants = document.getElementsByClassName('msg');
 
         // 1 of 2 child are not of your bisness, and the first is the < << >> > button so start at 3 and +2
@@ -520,102 +525,108 @@ function display() {
 	log('start to display');
     var maxRaid = 6;
 
-    //load coords from cookie
-    var tabCoord = getCookie("tabCoord");
-    log(tabCoord);
-
-    //load attack times from cookie
-    var tabCoordHeures = getCookie("tabCoordHeures");
-    log(tabCoordHeures);
-
-    //load defender names from cookie
-    var tabDefenderNames = getCookie("tabDefenderNames");
-    log(tabDefenderNames);
-
-    var isGood =true;
-    var coordByNbAttaque = {};
-
-    for (var coord in tabCoord )
+    try
     {
-        var defenderSpan = '<span style="font-weight: bold; color: grey;">  '+tabDefenderNames[coord]+'</span>';
+        //load coords from cookie
+        var tabCoord = getCookie("tabCoord");
+        log(tabCoord);
 
-        var coordHeure = '';
-        if (tabCoordHeures)
-            coordHeure = tabCoordHeures[coord];
+        //load attack times from cookie
+        var tabCoordHeures = getCookie("tabCoordHeures");
+        log(tabCoordHeures);
 
-        if (typeof coordByNbAttaque[tabCoord[coord]] == 'undefined')
+        //load defender names from cookie
+        var tabDefenderNames = getCookie("tabDefenderNames");
+        log(tabDefenderNames);
+
+        var isGood =true;
+        var coordByNbAttaque = {};
+
+        for (var coord in tabCoord )
         {
-            coordByNbAttaque[tabCoord[coord]] = '<a title="'+coordHeure+' (time in UTC)" href="'+coordToUrl(coord)+'" >'+coord +'</a>'+defenderSpan+'<br/> ';
+            var defenderSpan = '<span style="font-weight: bold; color: grey;">  '+tabDefenderNames[coord]+'</span>';
+
+            var coordHeure = '';
+            if (tabCoordHeures)
+                coordHeure = tabCoordHeures[coord];
+
+            if (typeof coordByNbAttaque[tabCoord[coord]] == 'undefined')
+            {
+                coordByNbAttaque[tabCoord[coord]] = '<a title="'+coordHeure+' (time in UTC)" href="'+coordToUrl(coord)+'" >'+coord +'</a>'+defenderSpan+'<br/> ';
+            }
+            else
+            {
+                coordByNbAttaque[tabCoord[coord]] +='<a title="'+coordHeure+' (time in UTC)" href="'+coordToUrl(coord)+'">'+coord +'</a>'+defenderSpan+'<br/>  ';
+            }
+
+            // show alert
+            if ( tabCoord[coord] >= maxRaid )
+            {
+                isGood =false;
+            }
+
+        }
+
+        //linear-gradient(to bottom, #959595 0%,#0d0d0d 10%,#010101 70%,#0a0a0a 80%,#4e4e4e 90%,#383838 95%,#1b1b1b 100%)
+        var htmlCount = '<div class="textCenter" style="font-weight: bold;background: linear-gradient(to bottom, #959595 0%,#0d0d0d 7%,#010101 85%,#0a0a0a 91%,#4e4e4e 93%,#383838 97%,#1b1b1b 100%);' +
+            'border: 2px solid black;border-radius: 5px;padding: 1px;text-align: center;color: #4f85bb;height:38px;display: block; font-size: 14px;padding: 7px">';
+
+        if ( isGood )
+        {
+            htmlCount += title1 + '<br/>';
+            htmlCount += '<span style="color: #4f85bb; font-size: 11px;">'+title2+'</span><br/>';
         }
         else
         {
-            coordByNbAttaque[tabCoord[coord]] +='<a title="'+coordHeure+' (time in UTC)" href="'+coordToUrl(coord)+'">'+coord +'</a>'+defenderSpan+'<br/>  ';
+            htmlCount += '<span style="font-weight: bold; color: rgb(128, 0, 0); font-size: 14px;">'+title3+'</span>';
+        }
+        htmlCount += '</div>';
+
+        // start content div
+        htmlCount += '<div class="attackContent" style="font-size: 9px;color: #4f85bb;font-weight: bold;background: #111111;padding: 8px;">';
+        for (var count in coordByNbAttaque )
+        {
+            if ( count == "1")
+            {
+                htmlCount += count +' '+captionAttack+' :  <br />' + coordByNbAttaque[count] + ' <br/>';
+            }
+            else if (count < maxRaid )
+            {
+                htmlCount += count +' '+captionAttacks+' :  <br />' + coordByNbAttaque[count] + ' <br/>';
+            }
+            else
+            {
+                htmlCount += '<span style="font-weight: bold; color: rgb(128, 0, 0);">';
+                htmlCount += count +' '+captionAttacks+' :  <br />' + coordByNbAttaque[count] + ' <br/>';
+                htmlCount +='</span>';
+            }
         }
 
-        // show alert
-        if ( tabCoord[coord] >= maxRaid )
+        htmlCount += '</div>';
+
+        var info = createDiv("id_check_attaque", "content-box-s");
+        info.style.width = '170px';
+        info.style.borderRadius = '5px';
+        info.style.border = '1px solid black';
+        info.innerHTML=htmlCount;
+
+
+        var link = document.getElementById("links");
+        var conteneur =  document.getElementById('id_check_attaque');
+        if (typeof(conteneur) == 'undefined' || conteneur === null)
         {
-            isGood =false;
-        }
-
-    }
-
-    //linear-gradient(to bottom, #959595 0%,#0d0d0d 10%,#010101 70%,#0a0a0a 80%,#4e4e4e 90%,#383838 95%,#1b1b1b 100%)
-    var htmlCount = '<div class="textCenter" style="font-weight: bold;background: linear-gradient(to bottom, #959595 0%,#0d0d0d 7%,#010101 85%,#0a0a0a 91%,#4e4e4e 93%,#383838 97%,#1b1b1b 100%);' +
-        'border: 2px solid black;border-radius: 5px;padding: 1px;text-align: center;color: #4f85bb;height:38px;display: block; font-size: 14px;padding: 7px">';
-
-    if ( isGood )
-    {
-        htmlCount += title1 + '<br/>';
-        htmlCount += '<span style="color: #4f85bb; font-size: 11px;">'+title2+'</span><br/>';
-    }
-    else
-    {
-        htmlCount += '<span style="font-weight: bold; color: rgb(128, 0, 0); font-size: 14px;">'+title3+'</span>';
-    }
-    htmlCount += '</div>';
-
-    // start content div
-    htmlCount += '<div class="attackContent" style="font-size: 9px;color: #4f85bb;font-weight: bold;background: #111111;padding: 8px;">';
-    for (var count in coordByNbAttaque )
-    {
-        if ( count == "1")
-        {
-            htmlCount += count +' '+captionAttack+' :  <br />' + coordByNbAttaque[count] + ' <br/>';
-        }
-        else if (count < maxRaid )
-        {
-            htmlCount += count +' '+captionAttacks+' :  <br />' + coordByNbAttaque[count] + ' <br/>';
+            link.appendChild(info);
         }
         else
         {
-            htmlCount += '<span style="font-weight: bold; color: rgb(128, 0, 0);">';
-            htmlCount += count +' '+captionAttacks+' :  <br />' + coordByNbAttaque[count] + ' <br/>';
-            htmlCount +='</span>';
+            link.replaceChild(info,conteneur);
         }
     }
-
-    htmlCount += '</div>';
-
-    var info = createDiv("id_check_attaque", "content-box-s");
-    info.style.width = '170px';
-    info.style.borderRadius = '5px';
-    info.style.border = '1px solid black';
-    info.innerHTML=htmlCount;
-
-
-    var link = document.getElementById("links");
-    var conteneur =  document.getElementById('id_check_attaque');
-    if (typeof(conteneur) == 'undefined' || conteneur === null)
+    catch (ex)
     {
-        link.appendChild(info);
-    }
-    else
-    {
-        link.replaceChild(info,conteneur);
+        console.log('Error on display(): ' + ex);
     }
 }
-
 
 // execute script
 startScript();
