@@ -1,18 +1,25 @@
 // ==UserScript==
 // @name        CheckAttack
-// @namespace   GeneralAnasazi
-// @author	GeneralAnasazi
+// @namespace   https://github.com/GeneralAnasazi
+// @author      GeneralAnasazi
 // @description Plug in anti bash
-// @include     *ogame.gameforge.com/game/*
-// @version     3.1.2
+// @include *ogame.gameforge.com/game/*
+// @version 3.2.0
 // @grant       None
 
 // ==/UserScript==
 
 // constants
 const COOKIE_EXPIRES_DAYS = 1;
-const TABID_SPY = 20;
+
+const TABID_SPY_REPORT = 20;
 const TABID_COMBAT_REPORT = 21; // combat report
+
+const DIV_STATUS_GIF_ID = "id_check_attack_status_div";
+const DIV_STATUS_ID = "id_check_attack";
+const LINKS_TOOLBAR_BUTTONS_ID = "links";
+const SPAN_STATUS_ID = "id_check_attack_status";
+
 
 // debug consts
 const DEBUG = false; // set it to true enable debug messages -> log(msg)
@@ -20,11 +27,63 @@ const RESET_COOKIES = false;
 
 // **************************************************************************
 
-//TODO: "read getMessage asyncron"
-
 // globale vars
 var language = document.getElementsByName('ogame-language')[0].content;
 var playerName = document.getElementsByName('ogame-player-name')[0].content;
+
+// async object
+var asyncHelper = {
+    currentPage: -1,
+    errors: 0,
+    lastCheck: getBashTimespan(),
+    maxErrors: 10,
+    maxPage: -1,
+    tabId: -1,
+
+    // *** METHODS ***
+    // finish the async process and set default values
+    clearAsync: function() {
+        if (this.started())
+        {
+            switch(this.tabId)
+            {
+                case TABID_SPY_REPORT:
+                    settings.lastCheckSpyReport = this.lastCheck;
+                    log('last check spy report ' + this.lastCheck);
+                    break;
+                case TABID_COMBAT_REPORT:
+                    settings.lastCheckCombatReport = this.lastCheck;
+                    log('last check combat report ' + this.lastCheck);
+                    break;
+            }
+            settings.write();
+            this.currentPage = -1;
+            this.lastCheck = getBashTimespan();
+            this.maxPage = -1;
+            this.tabId = -1;
+        }
+    },
+    // to initialize an async action
+    startAsync: function(tabId) {
+        this.currentPage = 1;
+        this.lastCheck = getBashTimespan();
+        this.maxPage = 0;
+        this.tabId = tabId;
+        switch (this.tabId)
+        {
+            case TABID_SPY_REPORT:
+                setStatus(loadStatusSR);
+                break;
+            case TABID_COMBAT_REPORT:
+                setStatus(loadStatusCR);
+                break;
+        }
+    },
+    // is an async process started
+    started: function() {
+        return (this.currentPage > -1 && this.maxPage > -1);
+    }
+};
 
 // settings object
 var settings = {
@@ -52,15 +111,17 @@ var settings = {
 }; // cookie tabSettings
 
 // translation vars (don't translate here)
-var title1 = 'Pas de risque';
-var title2 = 'de bash';
-var title3 = 'Risque de bash';
-var captionAttack = 'attaque';
-var captionAttacks = 'attaques';
+var captionAttack = "attaque";
+var captionAttacks = "attaques";
+var loadStatusCR = "loading CR";
+var loadStatusSR = "loading SR";
+var title1 = "Pas de risque";
+var title2 = "de bash";
+var title3 = "Risque de bash";
 
 // **************************************************************************
 
-
+//TODO: translation new vars
 // translate the viewed vars
 function translate()
 {
@@ -85,22 +146,6 @@ function log(msg)
         console.log(msg);
 }
 
-// loading the "page" page from the message page
-function getMessage(page, tabId) {
-	return $.ajax({
-		type: 'POST',
-		url: '/game/index.php?page=messages',
-		data: 'messageId=-1&tabid='+tabId+'&action=107&pagination='+page+'&ajax=1',
-		dataType: 'html',
-		context: document.body,
-		global: false,
-		async:false,
-		success: function(data) {
-			return data;
-		}
-	}).responseText;
-}
-
 function setTranslationVars(aTitle1, aTitle2, aTitle3, aCaptionAttack, aCaptionAttacks)
 {
     title1 = aTitle1;
@@ -117,6 +162,32 @@ function coordToUrl(coord)
 	 return '/game/index.php?page=galaxy&galaxy='+coordTab[0]+'&system='+coordTab[1]+'&position='+coordTab[2] ;
 }
 
+function createDiv(id, className)
+{
+    var div = document.createElement('div');
+    if (id !== '')
+        div.id = id;
+    div.className = className;
+    return div;
+}
+
+function createHiddenDiv()
+{
+    // create and hidden div for result storing and parsing
+    var div = document.createElement("div");
+    div.id ="verificationAttaque";
+    div.style.visibility = "hidden";
+    document.body.appendChild(div);
+}
+
+function createSpanStatus(msg)
+{
+    var span = document.createElement('span');
+    span.id = SPAN_STATUS_ID;
+    span.innerHTML = msg;
+    return span;
+}
+
 function decOldTimes(coordHours, coords, defenders)
 {
     var bashDate = getBashTimespan();
@@ -129,7 +200,7 @@ function decOldTimes(coordHours, coords, defenders)
             for (var i = 0; i < dates.length-1; i++) // there is on empty item on the end of each array
             {
                 var date = titleToDate(dates[i]);
-                log('titleToDate: ' + date + ' inc. Date: ' + dates[i]);
+                //log('titleToDate: ' + date + ' inc. Date: ' + dates[i]);
                 if (dates[i] !== '' && date > bashDate)
                 {
                     title += dates[i] + '\n';
@@ -150,375 +221,6 @@ function decOldTimes(coordHours, coords, defenders)
             }
         }
     }
-}
-
-function getBashTimespan()
-{
-    var date = new Date();
-    date.setDate(date.getDate() - 1);
-    return date;
-}
-
-function formateTitle(date,cpt)
-{
-	return date.toISOString(); // ISO Date
-    //return hours+'h'+minutes+' le '+ date + ' (p '+cpt+')';
-}
-
-function titleToDate(title)
-{
-    var result = getBashTimespan();
-    try
-    {
-        result = new Date(title);
-    }
-    catch (ex)
-    {
-        console.log('Error on titleToDate('+title+'): ' + ex);
-    }
-    return result;
-}
-
-function isAppendedToday(date, isSpyReport)
-{
-    var lastCheckSettings = settings.lastCheckCombatReport;
-    if (isSpyReport)
-        lastCheckSettings = settings.lastCheckSpyReport;
-
-    var lastCheck = getBashTimespan();
-    // performance boost
-    if (lastCheck < lastCheckSettings)
-    {
-        lastCheck = lastCheckSettings;
-        log('use lastCheck from settings');
-    }
-    log('LastCheck: ' + lastCheck + ' LastCheckSettings: ' + lastCheckSettings);
-    return date > lastCheck;
-}
-
-function createDiv(id, className)
-{
-    var div = document.createElement('div');
-    if (id !== '')
-        div.id = id;
-    div.className = className;
-    return div;
-}
-
-function getDateFromMessage(msg, isSpy)
-{
-    var result = new Date(2000, 0, 1);
-    if (msg)
-    {
-        var className = 'msg_date';
-        if (isSpy)
-        {
-            className = 'msg_date fright';
-        }
-        var mesgtab = msg.getElementsByClassName(className);
-        var date = mesgtab[0];
-        if (date)
-        {
-            var dateStr = String(date.innerHTML);
-            var datePart  = dateStr.split(" ")[0].split(".");
-            var timePart = dateStr.split(" ")[1].split(":");
-
-            var day = datePart[0];
-            var month = datePart[1];
-            var year = datePart[2];
-
-            var hour = timePart[0];
-            var minutes = timePart[1];
-            var seconds = timePart[2];
-            result = new Date(year, month - 1, day, hour, minutes, seconds);
-        }
-    }
-    return result;
-}
-
-function getDefender(msg)
-{
-    // get Defender
-    var result = 'Unknown';
-
-    var defenderDiv = msg.getElementsByClassName('combatRightSide');
-    if (defenderDiv[0])
-    {
-        var toolTip = defenderDiv[0].getElementsByClassName('msg_ctn msg_ctn2 overmark tooltipRight')[0];
-        if (!toolTip)
-            toolTip = defenderDiv[0].getElementsByClassName('msg_ctn msg_ctn2 undermark tooltipRight')[0];
-        if (toolTip)
-        {
-            result = toolTip.innerHTML;
-            result = result.split(': ')[1].replace('(', '').replace(')', '');
-        }
-    }
-    if (result == 'Unknown' && defenderDiv[0])
-        log(defenderDiv);
-    else if (result == 'Unknown')
-        log(msg);
-    return result;
-}
-
-// save function to read and parse a JSON cookie
-function getCookie(name)
-{
-    var result = {};
-    //log('read cookie: ' + name);
-    var cookie = $.cookie(name);
-    if (cookie)
-    {
-        try
-        {
-            result = $.parseJSON(cookie);
-        }
-        catch (exception)
-        {
-            // errors will be shown every time, but will not stop the script
-            console.log('ERROR: ' + exception);
-        }
-    }
-    return result;
-}
-
-function resetCookies()
-{
-    // resetCookies is only for debug operations or to transfor old date format to the new one
-    log('reset cookies');
-    $.cookie('tabCoord', JSON.stringify({}), {expires: COOKIE_EXPIRES_DAYS});
-    $.cookie('tabCoordHeures', JSON.stringify({}), {expires: COOKIE_EXPIRES_DAYS});
-    $.cookie('tabDefenderNames', JSON.stringify({}), {expires: COOKIE_EXPIRES_DAYS});
-    $.cookie('tabInactivePlayers', JSON.stringify({}), {expires: COOKIE_EXPIRES_DAYS});
-
-    // to prevent that the cooies will be reseted every time
-    settings.lastCheckCombatReport = getBashTimespan();
-    settings.lastCheckSpyReport = getBashTimespan();
-    settings.write();
-}
-
-// initialize the script and load some informations from existing cookies
-function startScript()
-{
-    // button for checking
-    var btn = document.createElement("a");
-    btn.innerHTML="Check Raid";
-    btn.className="menubutton";
-    btn.href ="javascript:"; 				// i don't like href="#" it can make the page moving
-    btn.addEventListener('click', function(){ loadInfo() ;}, false);
-    var li=document.createElement("li");
-    li.appendChild(btn);
-    var barre = document.getElementById("menuTableTools");
-    barre.appendChild(li);
-
-    // create and hidden div for result storing and parsing
-    var div = document.createElement("div");
-    div.id ="verificationAttaque";
-    div.style.visibility = "hidden";
-    document.body.appendChild(div);
-
-    translate();
-    settings.load();
-    log(settings);
-
-    if (RESET_COOKIES) // for debug
-        resetCookies();
-
-    var tabCoordCookie = $.cookie("tabCoord");
-    if (typeof(tabCoordCookie) != 'undefined')
-    {
-        display();
-    }
-}
-
-// search inactive players in the spy tab and save the inactive players in a cookie
-function searchInactivePlayers()
-{
-    log('start search inactive players');
-    var inactivePlayers = getCookie("tabInactivePlayers");
-    var div = document.getElementById("verificationAttaque");
-    if (!div) return;
-
-    div.innerHTML = getMessage(1, TABID_SPY);
-    var litab = document.getElementsByClassName('paginator');
-    var li = litab[litab.length -1];
-    var pageCount = li.getAttribute("data-page");
-    var ok = true;
-    var lastCheck = getBashTimespan();
-
-    for (var page = 1; page <= pageCount; page++)
-    {
-        // the first page is loaded, there is no need to do it again
-        if (page > 1)
-            div.innerHTML = getMessage(page, TABID_SPY);
-
-        var messageList = document.getElementsByClassName('msg ');
-        if (messageList)
-        {
-            for (var i = 0; i < messageList.length; i++)
-            {
-                var msgDate = getDateFromMessage(messageList[i], true);
-                if (page == 1 && i === 0)
-                    lastCheck = msgDate;
-
-                if (isAppendedToday(msgDate, true))
-                {
-                    //<span class="status_abbr_longinactive">&nbsp;&nbsp;Felcken</span>
-                    var inactiveSpan = messageList[i].getElementsByClassName('status_abbr_longinactive');
-                    if (!inactiveSpan[0])
-                        inactiveSpan = messageList[i].getElementsByClassName('status_abbr_inactive');
-                    if (inactiveSpan[0])
-                    {
-                        //read player name
-                        var initplayerName = inactiveSpan[0].innerHTML + '';
-                        var playerName = initplayerName.replace('&nbsp;', '');
-
-                        // check if an inner html there
-                        if (playerName.substring(0, 1) == '<')
-                        {
-                            var idx = playerName.lastIndexOf('&nbsp;');
-                            playerName = playerName.substr(idx + 6, playerName.length - (idx + 6));
-                        }
-                        playerName = playerName.replace('&nbsp;', '');
-                        if (playerName.substring(0, 1) != '(' && playerName.substring(0, 1) != '<')
-                            inactivePlayers[playerName] = 'i';
-                    }
-                }
-                else
-                {
-                    log('Message Date: ' + msgDate + ' - Settings: ' + settings.lastCheckSpyReport);
-                    ok = false;
-                    break;
-                }
-            }
-            if (!ok)
-                break;
-        }
-    }
-    log(inactivePlayers);
-    settings.lastCheckSpyReport = lastCheck;
-    log(settings);
-    log('end searchInactivePlayers');
-    $.cookie("tabInactivePlayers", JSON.stringify(inactivePlayers), {expires: COOKIE_EXPIRES_DAYS});
-    return lastCheck;
-}
-
-function loadInfo()
-{
-
-    // display a loading gif
-    var info = document.createElement("div");
-    info.className="adviceWrapper";
-    info.innerHTML='<div style="algin:center;text-align: center;"><img src="https://raw.githubusercontent.com/GrosLapin/scriptOgame/master/ajax-loader.gif" /></div>';
-    info.id="id_check_attaque";
-
-    var link = document.getElementById("links");
-    var conteneur =  document.getElementById('id_check_attaque');
-    if (typeof(conteneur) == 'undefined' || conteneur === null)
-    {
-        link.appendChild(info);
-    }
-    else
-    {
-        link.replaceChild(info,conteneur);
-    }
-
-    // seting some constant like the number of page in the message section
-    var div =  document.getElementById("verificationAttaque");
-    var message = getMessage(1, TABID_COMBAT_REPORT);
-    div.innerHTML = message;
-    if (div.innerHTML === 'undefined')
-        return;
-
-    var litab = document.getElementsByClassName('paginator');
-    var li = litab[litab.length -1];
-    var maxPage = li.getAttribute("data-page");
-
-    var cpt = 1;
-    var ok = true;
-    // load cookies for faster execution, if checked today
-    var tabCoord = getCookie("tabCoord");
-    var tabCoordHeures = getCookie("tabCoordHeures");
-    var tabDefenderNames = getCookie("tabDefenderNames");
-    var lastCheck = getBashTimespan();
-
-    // check for the old version and transform it
-    var coord = Object.keys(tabCoordHeures)[0];
-    if (coord && tabCoordHeures[coord] && tabCoordHeures[coord].includes(' le '))
-    {
-        resetCookies();
-        tabCoord = {};
-        tabCoordHeures = {};
-        tabDefenderNames = {};
-    }
-
-
-    decOldTimes(tabCoordHeures, tabCoord, tabDefenderNames);
-    searchInactivePlayers();
-    var inactivePlayers = getCookie("tabInactivePlayers");
-    log(inactivePlayers);
-
-    // main loop
-    while (cpt <= maxPage && ok )
-    {
-        if (!message)
-            break;
-        // store the HTML in hidden div
-        div.innerHTML = message;
-        var lutab = document.getElementsByClassName('ctn_with_trash');
-        var collEnfants = document.getElementsByClassName('msg');
-
-        // 1 of 2 child are not of your bisness, and the first is the < << >> > button so start at 3 and +2
-        for (var i = 0; i < collEnfants.length; i++)
-        {
-            var msg = collEnfants[i];
-            var defenderName = getDefender(msg);
-            var date = getDateFromMessage(msg, false);
-            if (cpt == 1 && i === 0)
-                lastCheck = date;
-
-            if ((inactivePlayers[defenderName] != 'i' || inactivePlayers == {}) &&
-                // exclude attacks of your self
-                defenderName != playerName)
-            {
-                if (isAppendedToday(date, false))
-                {
-                    log('Append Date(loadInfo): ' + date + '  Settings: ' + settings.lastCheckCombatReport);
-                    var locTab = msg.getElementsByClassName('txt_link');
-                    coord = locTab[0].innerHTML;
-                    if (!tabCoord[coord])
-                    {
-                        tabCoord[coord] = 1;
-                        tabCoordHeures[coord] = formateTitle(date,cpt)+'\n';
-                        tabDefenderNames[coord] = defenderName;
-                    }
-                    else
-                    {
-                        tabCoord[coord] += 1;
-                        tabCoordHeures[coord] += formateTitle(date,cpt)+'\n';
-                    }
-                }
-                else
-                {
-                    log('Message Date: ' + date + ' Settings: ' + settings.lastCheckCombatReport);
-                    ok = false;
-                    break;
-                }
-            }
-        }
-
-        cpt++;
-        message = getMessage(cpt, TABID_COMBAT_REPORT);
-    }
-    // end of collecting data time for some display
-    log('CoordsToCookies');
-    $.cookie("tabCoord", JSON.stringify(tabCoord), {expires: COOKIE_EXPIRES_DAYS});
-    $.cookie("tabCoordHeures", JSON.stringify(tabCoordHeures), {expires: COOKIE_EXPIRES_DAYS});
-    $.cookie("tabDefenderNames", JSON.stringify(tabDefenderNames), {expires: COOKIE_EXPIRES_DAYS});
-    // write settings
-    settings.lastCheckCombatReport = lastCheck;
-    settings.write();
-    log('start display loadInfo');
-    display();
 }
 
 function display() {
@@ -604,28 +306,457 @@ function display() {
 
         htmlCount += '</div>';
 
-        var info = createDiv("id_check_attaque", "content-box-s");
+        var info = createDiv(DIV_STATUS_ID, "content-box-s");
         info.style.width = '170px';
         info.style.borderRadius = '5px';
         info.style.border = '1px solid black';
         info.innerHTML=htmlCount;
 
-
-        var link = document.getElementById("links");
-        var conteneur =  document.getElementById('id_check_attaque');
-        if (typeof(conteneur) == 'undefined' || conteneur === null)
-        {
-            link.appendChild(info);
-        }
-        else
-        {
-            link.replaceChild(info,conteneur);
-        }
+        replaceElement(LINKS_TOOLBAR_BUTTONS_ID, DIV_STATUS_ID, info);
     }
     catch (ex)
     {
         console.log('Error on display(): ' + ex);
     }
+}
+
+function displayLoadingGif()
+{
+    // display a loading gif
+    var info = document.createElement("div");
+    info.className = "adviceWrapper";
+    info.innerHTML =
+        '<div style="algin:center;text-align: center;" id="' + DIV_STATUS_GIF_ID + '">' +
+            '<img src="https://raw.githubusercontent.com/GrosLapin/scriptOgame/master/ajax-loader.gif" /></br>' +
+        '</div>';
+    info.id = DIV_STATUS_ID;
+    var span = createSpanStatus('start loading...');
+    info.getElementsByTagName('div')[0].appendChild(span);
+
+    replaceElement(LINKS_TOOLBAR_BUTTONS_ID, DIV_STATUS_ID, info);
+}
+
+function getBashTimespan()
+{
+    var date = new Date();
+    date.setDate(date.getDate() - 1);
+    return date;
+}
+
+// save function to read and parse a JSON cookie
+function getCookie(name)
+{
+    var result = {};
+    //log('read cookie: ' + name);
+    var cookie = $.cookie(name);
+    if (cookie)
+    {
+        try
+        {
+            result = $.parseJSON(cookie);
+        }
+        catch (exception)
+        {
+            // errors will be shown every time, but will not stop the script
+            console.log('ERROR: ' + exception);
+        }
+    }
+    return result;
+}
+
+function getDateFromMessage(msg, isSpy)
+{
+    var result = new Date(2000, 0, 1);
+    if (msg)
+    {
+        var className = 'msg_date';
+        if (isSpy)
+        {
+            className = 'msg_date fright';
+        }
+        var mesgtab = msg.getElementsByClassName(className);
+        var date = mesgtab[0];
+        if (date)
+        {
+            var dateStr = String(date.innerHTML);
+            var datePart  = dateStr.split(" ")[0].split(".");
+            var timePart = dateStr.split(" ")[1].split(":");
+
+            var day = datePart[0];
+            var month = datePart[1];
+            var year = datePart[2];
+
+            var hour = timePart[0];
+            var minutes = timePart[1];
+            var seconds = timePart[2];
+            result = new Date(year, month - 1, day, hour, minutes, seconds);
+        }
+        else
+        {
+            console.log("Error on getDateFromMessage(msg, isSpy): Can't read the date " + mesgtab);
+        }
+    }
+    return result;
+}
+
+function getDefender(msg)
+{
+    // get Defender
+    var result = 'Unknown';
+
+    var defenderDiv = msg.getElementsByClassName('combatRightSide');
+    if (defenderDiv[0])
+    {
+        var toolTip = defenderDiv[0].getElementsByClassName('msg_ctn msg_ctn2 overmark tooltipRight')[0];
+        if (!toolTip)
+            toolTip = defenderDiv[0].getElementsByClassName('msg_ctn msg_ctn2 undermark tooltipRight')[0];
+        if (toolTip)
+        {
+            result = toolTip.innerHTML;
+            result = result.split(': ')[1].replace('(', '').replace(')', '');
+        }
+    }
+    if (result == 'Unknown' && defenderDiv[0])
+        log(defenderDiv);
+    else if (result == 'Unknown')
+        log(msg);
+    return result;
+}
+
+// loading the page async from the server
+function getMessageAsync() {
+    if (asyncHelper.started())
+    {
+        return $.ajax({
+            type:     'POST',
+            url:      '/game/index.php?page=messages',
+            data:     'messageId=-1&tabid='+asyncHelper.tabId+'&action=107&pagination='+asyncHelper.currentPage+'&ajax=1',
+            dataType: 'html',
+            context:  document.body,
+            global:   false,
+            async:    true,
+            error:    function(jqXHR, exception) {
+                console.log(exception);
+                if (asyncHelper.errors <= asyncHelper.maxerrors && asyncHelper.started())
+                    getMessageAsync(); // on an error try it again
+            },
+            success:  function(data) {
+                var result = -1;
+                try
+                {
+                    var div = document.getElementById("verificationAttaque");
+                    if (div)
+                    {
+                        div.innerHTML = data;
+                        if (asyncHelper.currentPage == 1)
+                            asyncHelper.maxPage = getMaxPage();
+
+                        switch (asyncHelper.tabId)
+                        {
+                            case TABID_SPY_REPORT:
+                                result = readSpyReports(asyncHelper.currentPage) ? 1 : 0;
+                                asyncHelper.currentPage++;
+                                setStatus(loadStatusSR);
+                                break;
+                            case TABID_COMBAT_REPORT:
+                                result = readCombatReports(asyncHelper.currentPage) ? 1 : 0;
+                                asyncHelper.currentPage++;
+                                setStatus(loadStatusCR);
+                                break;
+                        }
+                        if (result == 1) // load the other pages recursiv
+                        {
+                            if (asyncHelper.currentPage <= asyncHelper.maxPage)
+                                getMessageAsync();
+                        }
+                        else if (result === 0 || asyncHelper.currentPage > asyncHelper.maxPage)
+                        {
+                            switch (asyncHelper.tabId)
+                            {
+                                case TABID_SPY_REPORT:
+                                    asyncHelper.clearAsync();
+                                    asyncHelper.startAsync(TABID_COMBAT_REPORT);
+                                    log(asyncHelper);
+                                    getMessageAsync();
+                                    break;
+                                case TABID_COMBAT_REPORT:
+                                    asyncHelper.clearAsync();
+                                    // messages are loaded -> view the result
+                                    display();
+                                    break;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        console.log('div "verificationAttaque" not found');
+                    }
+                }
+                catch(ex)
+                {
+                    console.log(ex);
+                }
+            }
+        });
+    }
+}
+
+function getMaxPage()
+{
+    var result = -1;
+    var litab = document.getElementsByClassName('paginator');
+    var li = litab[litab.length -1];
+    if (li)
+        result = li.getAttribute("data-page");
+    return result;
+}
+
+function isAppendedToday(date, isSpyReport)
+{
+    var lastCheckSettings = settings.lastCheckCombatReport;
+    if (isSpyReport)
+        lastCheckSettings = settings.lastCheckSpyReport;
+
+    var fLastCheck = getBashTimespan();
+    // performance boost
+    if (fLastCheck < lastCheckSettings)
+    {
+        fLastCheck = lastCheckSettings;
+        log("use lastCheck from settings " + fLastCheck);
+    }
+
+    return date > fLastCheck;
+}
+
+function loadInfo()
+{
+    // check for no other clicks and lock this procedure
+    if (asyncHelper.started())
+        return;
+
+    displayLoadingGif();
+    asyncHelper.startAsync(TABID_SPY_REPORT); // set the start values for the async process
+
+    // load cookies for faster execution, if checked today
+    var tabCoord = getCookie("tabCoord");
+    var tabCoordHeures = getCookie("tabCoordHeures");
+    var tabDefenderNames = getCookie("tabDefenderNames");
+
+    // check for the old version and transform it
+    var coord = Object.keys(tabCoordHeures)[0];
+    if (coord && tabCoordHeures[coord] && tabCoordHeures[coord].includes(' le '))
+    {
+        resetCookies();
+        tabCoord = {};
+        tabCoordHeures = {};
+        tabDefenderNames = {};
+    }
+    decOldTimes(tabCoordHeures, tabCoord, tabDefenderNames);
+
+    // start search for inactive players -> async
+    getMessageAsync();
+}
+
+function readCombatReports(page)
+{
+    var result = true;
+    try
+    {
+        var isSpyReport = false;
+        // load cookies
+        var tabCoord = getCookie("tabCoord");
+        var tabCoordHeures = getCookie("tabCoordHeures");
+        var tabDefenderNames = getCookie("tabDefenderNames");
+        var inactivePlayers = getCookie("tabInactivePlayers");
+
+        var collEnfants = document.getElementsByClassName('msg');
+        log(collEnfants);
+
+        // 1 of 2 child are not of your bisness, and the first is the < << >> > button so start at 3 and +2
+        for (var i = 0; i < collEnfants.length; i++)
+        {
+            var msg = collEnfants[i];
+            var defenderName = getDefender(msg);
+            var date = getDateFromMessage(msg, isSpyReport);
+            if (page == 1 && i === 0)
+                asyncHelper.lastCheck = date;
+
+            if ((inactivePlayers[defenderName] != 'i' || inactivePlayers == {}) &&
+                // exclude attacks of your self
+                defenderName != playerName)
+            {
+                log('Before Append Date(loadInfo): ' + date + '  Settings: ' + settings.lastCheckCombatReport);
+                if (isAppendedToday(date, isSpyReport))
+                {
+                    log('Append Date(loadInfo): ' + date + '  Settings: ' + settings.lastCheckCombatReport);
+                    var locTab = msg.getElementsByClassName('txt_link');
+                    var coord = locTab[0].innerHTML;
+                    if (!tabCoord[coord])
+                    {
+                        tabCoord[coord] = 1;
+                        tabCoordHeures[coord] = date.toISOString() + '\n';
+                        tabDefenderNames[coord] = defenderName;
+                    }
+                    else
+                    {
+                        tabCoord[coord] += 1;
+                        tabCoordHeures[coord] += date.toISOString() + '\n';
+                    }
+                }
+                else
+                {
+                    log('Result false - Message Date: ' + date + ' Settings: ' + asyncHelper.lastCheck);
+                    result = false;
+                    break;
+                }
+            }
+        }
+
+        // end of collecting data time for some display
+        $.cookie("tabCoord", JSON.stringify(tabCoord), {expires: COOKIE_EXPIRES_DAYS});
+        $.cookie("tabCoordHeures", JSON.stringify(tabCoordHeures), {expires: COOKIE_EXPIRES_DAYS});
+        $.cookie("tabDefenderNames", JSON.stringify(tabDefenderNames), {expires: COOKIE_EXPIRES_DAYS});
+    }
+    catch(ex)
+    {
+        console.log("Error on readCombatReports(page): " + ex);
+        result = false;
+    }
+    return result;
+}
+
+function readSpyReports(page)
+{
+    var result = true;
+    var inactivePlayers = getCookie("tabInactivePlayers");
+
+    var messageList = document.getElementsByClassName('msg ');
+    if (messageList)
+    {
+        for (var i = 0; i < messageList.length; i++)
+        {
+            var msgDate = getDateFromMessage(messageList[i], true);
+            if (page == 1 && i === 0)
+            {
+                asyncHelper.lastCheck = msgDate;
+                log('set last check: ' + asyncHelper.lastCheck);
+            }
+
+            if (isAppendedToday(msgDate, true))
+            {
+                //<span class="status_abbr_longinactive">&nbsp;&nbsp;Felcken</span>
+                var inactiveSpan = messageList[i].getElementsByClassName('status_abbr_longinactive');
+                if (!inactiveSpan[0])
+                    inactiveSpan = messageList[i].getElementsByClassName('status_abbr_inactive');
+                if (inactiveSpan[0])
+                {
+                    //read player name
+                    var initplayerName = inactiveSpan[0].innerHTML + '';
+                    var playerName = initplayerName.replace('&nbsp;', '');
+
+                    // check if an inner html there
+                    if (playerName.substring(0, 1) == '<')
+                    {
+                        var idx = playerName.lastIndexOf('&nbsp;');
+                        playerName = playerName.substr(idx + 6, playerName.length - (idx + 6));
+                    }
+                    playerName = playerName.replace('&nbsp;', '');
+                    if (playerName.substring(0, 1) != '(' && playerName.substring(0, 1) != '<')
+                        inactivePlayers[playerName] = 'i';
+                }
+            }
+            else
+            {
+                log('Message Date: ' + msgDate + ' - Settings: ' + asyncHelper.lastCheck);
+                result = false;
+                break;
+            }
+        }
+    }
+    else
+    {
+        console.log("Error on readSpyReports(page): MessageList not found");
+    }
+    $.cookie("tabInactivePlayers", JSON.stringify(inactivePlayers), {expires: COOKIE_EXPIRES_DAYS});
+    return result;
+}
+
+function replaceElement(idParent, idElement, element)
+{
+    var link = document.getElementById(idParent);
+    var conteneur =  document.getElementById(idElement);
+    if (!conteneur)
+        link.appendChild(element);
+    else
+        link.replaceChild(element, conteneur);
+}
+
+function resetCookies()
+{
+    // resetCookies is only for debug operations or to transfor old date format to the new one
+    log('reset cookies');
+    $.cookie('tabCoord', JSON.stringify({}), {expires: COOKIE_EXPIRES_DAYS});
+    $.cookie('tabCoordHeures', JSON.stringify({}), {expires: COOKIE_EXPIRES_DAYS});
+    $.cookie('tabDefenderNames', JSON.stringify({}), {expires: COOKIE_EXPIRES_DAYS});
+    $.cookie('tabInactivePlayers', JSON.stringify({}), {expires: COOKIE_EXPIRES_DAYS});
+
+    // to prevent that the cooies will be reseted every time
+    settings.lastCheckCombatReport = getBashTimespan();
+    settings.lastCheckSpyReport = getBashTimespan();
+    settings.write();
+}
+
+function setStatus(msg)
+{
+    var text = msg;
+    if (asyncHelper.started())
+        text += ' page ' + asyncHelper.currentPage;
+    var span = createSpanStatus(text + '...');
+    replaceElement(DIV_STATUS_GIF_ID, SPAN_STATUS_ID, span);
+}
+
+// initialize the script and load some informations from existing cookies
+function startScript()
+{
+    // button for checking
+    var btn = document.createElement("a");
+    btn.innerHTML="Check Raid";
+    btn.className="menubutton";
+    btn.href ="javascript:"; 				// i don't like href="#" it can make the page moving
+    btn.addEventListener('click', function(){ loadInfo() ;}, false);
+    var li=document.createElement("li");
+    li.appendChild(btn);
+    var menu = document.getElementById("menuTableTools");
+    menu.appendChild(li);
+
+    createHiddenDiv();
+
+    translate();
+    settings.load();
+    log(settings);
+
+    if (RESET_COOKIES) // for debug
+        resetCookies();
+
+    var tabCoordCookie = $.cookie("tabCoord");
+    if (typeof(tabCoordCookie) != 'undefined')
+    {
+        display();
+    }
+}
+
+function titleToDate(title)
+{
+    var result = getBashTimespan();
+    try
+    {
+        result = new Date(title);
+    }
+    catch (ex)
+    {
+        console.log('Error on titleToDate('+title+'): ' + ex);
+    }
+    return result;
 }
 
 // execute script
