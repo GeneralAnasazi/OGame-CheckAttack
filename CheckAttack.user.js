@@ -4,7 +4,7 @@
 // @author      GeneralAnasazi
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
-// @version 3.3.0
+// @version 3.3.0.1
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
@@ -21,7 +21,8 @@ const DIV_STATUS_GIF_ID = "id_check_attack_status_div";
 const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
-
+// has to set after a renew
+const VERSION_SCRIPT = '3.3.0.1';
 
 // debug consts
 const DEBUG = true; // set it to true enable debug messages -> log(msg)
@@ -99,6 +100,36 @@ var asyncHelper = {
     }
 };
 
+var localeSettings = {
+    decimalSeperator: '',
+    thousandSeperator: '',
+    load: function() {
+        var number = 543.54;
+        var localeStr = number.toLocaleString();
+        if (localeStr.includes(','))
+        {
+            this.decimalSeparator = ',';
+            this.thousandSeperator = '.';
+        }
+        else
+        {
+            this.decimalSeparator = '.';
+            this.thousandSeperator = ',';
+        }
+    },
+    parseFloat: function(str) {
+        var result = -1;
+        var strNumber = str.replace(this.thousandSeperator, '');
+        if (this.decimalSeperator == ',')
+            strNumber = str.replace(',', '.');
+        var isMillion = strNumber.includes('M');
+        result = parseFloat(strNumber);
+        if (isMillion)
+            result = parseFloat(result * 1000000);
+        return result;
+    }
+};
+
 // getTranslation from OGame
 var ressourceTitles = {
     metal: '',
@@ -121,18 +152,16 @@ var ressourceTitles = {
         }
     },
     read: function() {
-        var json = GM_getValue('TranslationRessources', 'no value');
-        if (json != 'no value')
+        var obj = loadFromLocalStorage('TranslationRessources');
+        if (obj)
         {
-            var obj = JSON.parse(json);
             this.metal = obj.metal;
             this.crystal = obj.crystal;
             this.deuterium = obj.deuterium;
         }
     },
     write: function() {
-        var json = JSON.stringify(this);
-        GM_setValue('TranslationRessources', json);
+        writeToLocalStorage(this, 'TranslationRessources');
     }
 };
 
@@ -142,9 +171,13 @@ var settings = {
     lastCheckCombatReport: getBashTimespan(),
     // last readed message from spy report
     lastCheckSpyReport: getBashTimespan(),
+    lastVersion: '',
+    isNewVersion: function() {
+        return (this.lastVersion != VERSION_SCRIPT);
+    },
     load: function() {
-        var obj = getCookie('tabSettings');
-        if (obj != {})
+        var obj = loadFromLocalStorage('Settings');
+        if (obj)
         {
             if (obj.lastCheckCombatReport)
             {
@@ -154,10 +187,16 @@ var settings = {
             {
                 this.lastCheckSpyReport = new Date(obj.lastCheckSpyReport);
             }
+            if (obj.lastVersion)
+            {
+                this.lastVersion = obj.lastVersion;
+            }
         }
     },
     write: function() {
-        $.cookie('tabSettings', JSON.stringify(this), {expires: 60}); // the settings will be stored longer
+        this.lastVersion = VERSION_SCRIPT;
+        writeToLocalStorage(this, 'Settings');
+        //$.cookie('tabSettings', JSON.stringify(this), {expires: 60}); // the settings will be stored longer
     }
 }; // cookie tabSettings
 
@@ -186,6 +225,7 @@ function CombatReport(msg) {
                 var combatLeftSide = msg.getElementsByClassName('combatLeftSide')[0];
                 if (combatLeftSide)
                 {
+                    //TODO: Bei über einer Million werden die Daten abgeschnitten -> Bug fix
                     var spanList = combatLeftSide.getElementsByTagName('span');
                     if (spanList[0] && spanList.length > 2) //attacker
                     {
@@ -233,10 +273,10 @@ function Ressources(span) {
             try
             {
                 var arr = span.getAttribute('title').split('<br/>');
-                this.metal = parseInt(arr[1].split(': ')[1].replace('.',''));
-                this.crystal = parseInt(arr[2].split(': ')[1].replace('.',''));
-                this.deuterium = parseInt(arr[3].split(': ')[1].replace('.',''));
-                this.total = parseInt(span.innerHTML.split(': ')[1].split(', ')[0].replace('.',''));
+                this.metal = localeSettings.parseFloat(arr[1].split(': ')[1]);
+                this.crystal = localeSettings.parseFloat(arr[2].split(': ')[1]);
+                this.deuterium = localeSettings.parseFloat(arr[3].split(': ')[1]);
+                this.total = localeSettings.parseFloat(span.innerHTML.split(': ')[1]);
                 if (!ressourceTitles.isLoaded())
                 {
                     ressourceTitles.load(arr);
@@ -277,11 +317,12 @@ function Ressources(span) {
 
 function TotalRessources()  {
     this.combatReports = [];
+    this.lastCombatReport = getBashTimespan();
     this.ressources = new Ressources();
 
     /*** METHODS *********************/
     this.append = function(combatReport) {
-        if (combatReport)
+        if (combatReport && combatReport.ressources && combatReport.date > settings.lastCheckCombatReport)
         {
             this.combatReports.push(combatReport);
             if (combatReport.ressources.metal)
@@ -296,14 +337,20 @@ function TotalRessources()  {
     };
     this.calc = function(date) {
         this.ressources.clear();
+        this.sortByDateDesc();
+        log(this.combatReports);
         for (var i = 0; i < this.combatReports.length; i++)
         {
-            if ((this.combatReports[i].date > date && this.combatReports[i].ressources) || !date)
+            if ((this.combatReports[i].date > date && this.combatReports[i].ressources))
             {
-                this.ressources.metal += this.combatReports[i].ressources.metal;
-                this.ressources.crystal += this.combatReports[i].ressources.crystal;
-                this.ressources.deuterium += this.combatReports[i].ressources.deuterium;
-                this.ressources.total += this.combatReports[i].ressources.total;
+                if (this.combatReports[i].ressources.metal && !Number.isNaN(this.combatReports[i].ressources.metal))
+                    this.ressources.metal += this.combatReports[i].ressources.metal;
+                if (this.combatReports[i].ressources.crystal && !Number.isNaN(this.combatReports[i].ressources.crystal))
+                    this.ressources.crystal += this.combatReports[i].ressources.crystal;
+                if (this.combatReports[i].ressources.deuterium && !Number.isNaN(this.combatReports[i].ressources.deuterium))
+                    this.ressources.deuterium += this.combatReports[i].ressources.deuterium;
+                if (this.combatReports[i].ressources.total && !Number.isNaN(this.combatReports[i].ressources.total))
+                    this.ressources.total += this.combatReports[i].ressources.total;
             }
         }
     };
@@ -311,24 +358,10 @@ function TotalRessources()  {
         this.combatReports = [];
         this.ressources.clear();
     };
-    this.deleteFromDate= function(date) {
-        var i = 0;
-        while (i < this.combatReports.length)
-        {
-            if (this.combatReports[i].date < date)
-            {
-                delete this.combatReports[i];
-            }
-            else
-                i++;
-        }
-    };
     this.load = function() {
-        // the loading is not such easy or I have to exclude the other values
-        var json = GM_getValue('TotalRaidRessources', 'no value');
-        if (json != 'no value')
+        var obj = loadFromLocalStorage('TotalRaidRessources');
+        if (obj)
         {
-            var obj = JSON.parse(json);
             // Combat Reports
             for (var i = 0; i < obj.combatReports.length; i++)
             {
@@ -338,15 +371,26 @@ function TotalRessources()  {
             }
             // Ressources
             this.ressources.setValues(obj.ressources);
+            this.lastCombatReport = new Date(obj.lastCombatReport);
         }
         ressourceTitles.read();
     };
     this.save = function() {
-        var json = JSON.stringify(this);
-        GM_setValue('TotalRaidRessources', json);
+        writeToLocalStorage(this, 'TotalRaidRessources');
         ressourceTitles.write();
     };
-    this.sortCombatReports = function() {
+    this.compareByDate = function(left, right) {
+        var result = 0;
+        if (left.date < right.date)
+            result = -1;
+        else if (left.date > right.date)
+            result = 1;
+        // descending order
+        result = result * -1;
+        return result;
+    };
+    this.sortByDateDesc = function() {
+        this.combatReports.sort(this.compareByDate);
     };
     this.toHtml = function(title, className) {
         log(this);
@@ -427,6 +471,11 @@ function createSpanStatus(msg)
     if (msg.includes(ERROR))
         span.style.color = 'red';
     return span;
+}
+
+function deleteValueLocalStorage(key)
+{
+    GM_deleteValue('CheckAttack_' + key);
 }
 
 function decOldTimes(coordHours, coords, defenders)
@@ -795,6 +844,24 @@ function isAppendedToday(date, isSpyReport)
     return date > fLastCheck;
 }
 
+function loadFromLocalStorage(key)
+{
+    var result = null;
+    var json = GM_getValue('CheckAttack_' + key, 'no value');
+    if (json != 'no value')
+    {
+        try
+        {
+            result = JSON.parse(json);
+        }
+        catch (ex)
+        {
+            console.log('Error on loadFromLocalStorage(' + key + '): ' + ex);
+        }
+    }
+    return result;
+}
+
 function loadInfo()
 {
     // check for no other clicks and lock this procedure
@@ -961,12 +1028,19 @@ function resetCookies()
     $.cookie('tabCoord', JSON.stringify({}), {expires: COOKIE_EXPIRES_DAYS});
     $.cookie('tabCoordHeures', JSON.stringify({}), {expires: COOKIE_EXPIRES_DAYS});
     $.cookie('tabDefenderNames', JSON.stringify({}), {expires: COOKIE_EXPIRES_DAYS});
-    //$.cookie('tabInactivePlayers', JSON.stringify({}), {expires: COOKIE_EXPIRES_DAYS});
+    if (!RESET_COOKIS)
+    {
+        $.cookie('tabInactivePlayers', JSON.stringify({}), {expires: COOKIE_EXPIRES_DAYS});
+        settings.lastCheckSpyReport = getBashTimespan();
+    }
 
     // to prevent that the cooies will be reseted every time
     settings.lastCheckCombatReport = getBashTimespan();
-    //settings.lastCheckSpyReport = getBashTimespan();
     settings.write();
+
+    deleteValueLocalStorage('Settings');
+    if (settings.lastVersion === '')
+        deleteValueLocalStorage('TotalRaidRessources');
 }
 
 function setStatus(msg)
@@ -995,15 +1069,20 @@ function startScript()
         li.appendChild(btn);
         var menu = document.getElementById("menuTableTools");
         menu.appendChild(li);
-
         createHiddenDiv();
 
+        localeSettings.load();
         translate();
         settings.load();
-        totalRess.load();
-
+        if (settings.isNewVersion())
+        {
+            log('New Version detected!');
+            resetCookies();
+        }
         if (RESET_COOKIES) // for debug
             resetCookies();
+        totalRess.load();
+        log(settings);
 
         var tabCoordCookie = $.cookie("tabCoord");
         if (typeof(tabCoordCookie) != 'undefined')
@@ -1029,6 +1108,24 @@ function titleToDate(title)
         console.log('Error on titleToDate('+title+'): ' + ex);
     }
     return result;
+}
+
+function writeToLocalStorage(obj, key)
+{
+    var json = JSON.stringify(obj);
+    var canSave = true;
+    try
+    {
+        var testObj = JSON.parse(json);
+    }
+    catch (ex)
+    {
+        canSave = false;
+    }
+    if (canSave)
+    {
+        GM_setValue('CheckAttack_' + key, json);
+    }
 }
 
 // execute script
