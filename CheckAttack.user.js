@@ -4,7 +4,7 @@
 // @author      GeneralAnasazi
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
-// @version 3.3.0.1
+// @version 3.3.0.2
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
@@ -22,16 +22,18 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to set after a renew
-const VERSION_SCRIPT = '3.3.0.1';
+const VERSION_SCRIPT = '3.3.0.2';
 
 // debug consts
-const DEBUG = true; // set it to true enable debug messages -> log(msg)
+const DEBUG = false; // set it to true enable debug messages -> log(msg)
 const RESET_COOKIES = false;
 
 
 // **************************************************************************
 
 // globale vars
+var attackTracker = null;
+var inactivePlayers = null;
 var language = document.getElementsByName('ogame-language')[0].content;
 var playerName = document.getElementsByName('ogame-player-name')[0].content;
 var totalRess = new TotalRessources();
@@ -196,12 +198,150 @@ var settings = {
     write: function() {
         this.lastVersion = VERSION_SCRIPT;
         writeToLocalStorage(this, 'Settings');
-        //$.cookie('tabSettings', JSON.stringify(this), {expires: 60}); // the settings will be stored longer
     }
 }; // cookie tabSettings
 
 
 /***** CONSTRUCTORS ***********************************************************/
+
+function Attacks(combatReport) {
+    /***** PROPERTIES *****/
+    this.attackTimes = [];
+    this.coord = '';
+    this.count = 0;
+    this.defenderName = 'Unknown';
+    this.moon = false;
+    /***** METHODS *****/
+    this.addAttack = function(combatReport) {
+        if (combatReport)
+        {
+            this.attackTimes.push(combatReport.date);
+            this.coord = combatReport.coord;
+            this.defenderName = combatReport.defenderName;
+            this.moon = combatReport.moon;
+            this.count++;
+        }
+    };
+    this.checkAttacks = function() {
+        var bashSpan = getBashTimespan();
+        var i = 0;
+        log('checkAttacks ' + this.coord + ' ' + this.defenderName + ' ' + this.attackTimes.length);
+        while(i < this.attackTimes.length)
+        {
+            if (this.attackTimes[i] < bashSpan)
+            {
+                this.attackTimes.splice(i, 1);
+                this.count--;
+            }
+            else
+                i++;
+        }
+        return this.count;
+    };
+    this.getTimesStr = function() {
+        var result = '';
+        for (var i = 0; i < this.attackTimes.length; i++)
+        {
+            if (result !== '')
+                result += '\n';
+            result += this.attackTimes[i].toISOString();
+        }
+
+        return result;
+    };
+    this.setValues = function(attack) {
+        log(attack);
+        for (var i = 0; i < attack.attackTimes.length; i++)
+            this.attackTimes.push(new Date(attack.attackTimes[i]));
+        this.coord = attack.coord;
+        this.count = attack.count;
+        this.defenderName = attack.defenderName;
+        this.moon = attack.moon;
+    };
+    this.toHtml = function() {
+        var defenderSpan = '<span style="font-weight: bold; color: grey;display: inline-block;float: center;text-align: center">' + this.defenderName + '</span>';
+        if (this.moon)
+            defenderSpan += '<img src="https://github.com/GeneralAnasazi/OGame-CheckAttack/raw/master/Moon.gif" style="height: 14px; width: 14px;float: right;">';
+        return '<a title="' + this.getTimesStr() + ' (time in UTC)" href="' + coordToUrl(this.coord)+'" style="display: inline-block;width: 58px;text-align: left">' + this.coord + '</a>' + defenderSpan + '<br/>';
+    };
+
+    // on create
+    this.addAttack(combatReport);
+}
+
+function AttackTracker() {
+    /***** PROPERTIES *****/
+    this.attacks = [];
+
+    /***** METHODS *****/
+    this.addAttack = function(combatReport) {
+        var idx = this.attacks.findIndex(x => x.coord == combatReport.coord && x.moon == combatReport.moon);
+        if (idx > -1)
+        {
+            log('attack found at ' + idx);
+            log(this.attacks[idx]);
+            log(combatReport);
+            this.attacks[idx].addAttack(combatReport);
+        }
+        else
+            this.attacks.push(new Attacks(combatReport));
+    };
+    this.checkAttacks = function() {
+        var i = 0;
+        while ( i < this.attacks.length)
+        {
+            if (this.attacks[i].checkAttacks() > 0)
+                i++;
+            else
+                this.attacks.slice(i, 1);
+        }
+    };
+    this.clear = function() {
+        this.attacks = [];
+    };
+    this.read = function() {
+        this.clear();
+        var obj = loadFromLocalStorage('AttackTracker');
+        if (obj)
+        {
+            for (var i = 0; i < obj.attacks.length; i++)
+            {
+                var att = new Attacks();
+                att.setValues(obj.attacks[i]);
+                this.attacks.push(att);
+            }
+        }
+    };
+    this.sortAttacks = function() {
+        this.attacks.sort(function(left, right){
+            var result = 0;
+            if (left.count < right.count)
+                result = -1;
+            else if (left.count > right.count)
+                result = 1;
+            else
+            {
+                result = left.coord < right.coord ? -1 : (left.coord > right.coord ? -1 : 0);
+            }
+            return result;
+        });
+    };
+    this.toHtml = function() {
+        var result = '';
+        for (var i = 0; i < this.attacks.length; i++)
+        {
+            result += this.attacks[i].toHtml();
+        }
+        return result;
+    };
+    this.write = function() {
+        this.sortAttacks();
+        writeToLocalStorage(this, 'AttackTracker');
+    };
+
+    // on create
+    this.read();
+}
 
 function CombatReport(msg) {
     this.attackerName = 'Unknown';
@@ -209,6 +349,7 @@ function CombatReport(msg) {
     this.date = null;
     this.debrisField = 0;
     this.defenderName = 'Unknown';
+    this.moon = false;
     this.ressources = null;
     this.load = function(msg) {
         var result = false;
@@ -216,9 +357,15 @@ function CombatReport(msg) {
         {
             if (msg)
             {
-                var locTab = msg.getElementsByClassName('txt_link');
-                if (locTab[0])
-                    this.coord = locTab[0].innerHTML;
+                // get coord
+                var locTab = msg.getElementsByClassName('txt_link')[0];
+                if (locTab)
+                    this.coord = locTab.innerHTML;
+                // get isPlanet or isMoon
+                var figure = msg.getElementsByClassName('planetIcon moon')[0];
+                if (figure)
+                    this.moon = true;
+
                 this.date = getDateFromMessage(msg, false);
                 this.defenderName = getDefender(msg);
 
@@ -248,7 +395,7 @@ function CombatReport(msg) {
         this.coord = obj.coord;
         this.date = new Date(obj.date);
         this.debrisField = obj.debrisField;
-        this.defenderName = obj.DefenderName;
+        this.defenderName = obj.defenderName;
         this.ressources = new Ressources();
         this.ressources.setValues(obj.ressources);
     };
@@ -379,18 +526,8 @@ function TotalRessources()  {
         writeToLocalStorage(this, 'TotalRaidRessources');
         ressourceTitles.write();
     };
-    this.compareByDate = function(left, right) {
-        var result = 0;
-        if (left.date < right.date)
-            result = -1;
-        else if (left.date > right.date)
-            result = 1;
-        // descending order
-        result = result * -1;
-        return result;
-    };
     this.sortByDateDesc = function() {
-        this.combatReports.sort(this.compareByDate);
+        this.combatReports.sort(compareByDate);
     };
     this.toHtml = function(title, className) {
         log(this);
@@ -445,6 +582,17 @@ function coordToUrl(coord)
 	 return '/game/index.php?page=galaxy&galaxy='+coordTab[0]+'&system='+coordTab[1]+'&position='+coordTab[2] ;
 }
 
+function compareByDate(left, right) {
+    var result = 0;
+    if (left.date < right.date)
+        result = -1;
+    else if (left.date > right.date)
+        result = 1;
+    // descending order
+    result = result * -1;
+    return result;
+}
+
 function createDiv(id, className)
 {
     var div = document.createElement('div');
@@ -478,91 +626,33 @@ function deleteValueLocalStorage(key)
     GM_deleteValue('CheckAttack_' + key);
 }
 
-function decOldTimes(coordHours, coords, defenders)
-{
-    var bashDate = getBashTimespan();
-    for (var coord in coordHours)
-    {
-        if (coordHours.hasOwnProperty(coord))
-        {
-            var dates = coordHours[coord].split('\n');
-            var title = '';
-            for (var i = 0; i < dates.length-1; i++) // there is on empty item on the end of each array
-            {
-                var date = titleToDate(dates[i]);
-                //log('titleToDate: ' + date + ' inc. Date: ' + dates[i]);
-                if (dates[i] !== '' && date > bashDate)
-                {
-                    title += dates[i] + '\n';
-                }
-                else if (dates[i] !== '')
-                {
-                    coords[coord]--;
-                }
-
-            }
-            coordHours[coord] = title;
-            // delete empty ones
-            if (coords[coord] === 0)
-            {
-                delete coords[coord];
-                delete coordHours[coord];
-                delete defenders[coord];
-            }
-        }
-    }
-}
-
 function display() {
 	log('start to display');
+    log(attackTracker);
     var maxRaid = 6;
 
     try
     {
-        //load coords from cookie
-        var tabCoord = getCookie("tabCoord");
-        log(tabCoord);
-
-        //load attack times from cookie
-        var tabCoordHeures = getCookie("tabCoordHeures");
-        log(tabCoordHeures);
-
-        //load defender names from cookie
-        var tabDefenderNames = getCookie("tabDefenderNames");
-        log(tabDefenderNames);
-
         var isGood =true;
         var coordByNbAttaque = {};
 
-        for (var coord in tabCoord )
+        for (var i = 0; i < attackTracker.attacks.length; i++)
         {
-            var defenderSpan = '<span style="font-weight: bold; color: grey;">  '+tabDefenderNames[coord]+'</span>';
-
-            var coordHeure = '';
-            if (tabCoordHeures)
-                coordHeure = tabCoordHeures[coord];
-
-            if (typeof coordByNbAttaque[tabCoord[coord]] == 'undefined')
-            {
-                coordByNbAttaque[tabCoord[coord]] = '<a title="'+coordHeure+' (time in UTC)" href="'+coordToUrl(coord)+'" >'+coord +'</a>'+defenderSpan+'<br/> ';
-            }
+            var attack = attackTracker.attacks[i];
+            if (!coordByNbAttaque[attack.count])
+                coordByNbAttaque[attack.count] = attack.toHtml();
             else
-            {
-                coordByNbAttaque[tabCoord[coord]] +='<a title="'+coordHeure+' (time in UTC)" href="'+coordToUrl(coord)+'">'+coord +'</a>'+defenderSpan+'<br/>  ';
-            }
+                coordByNbAttaque[attack.count] += attack.toHtml();
 
             // show alert
-            if ( tabCoord[coord] >= maxRaid )
+            if ( attack.count >= maxRaid )
             {
-                isGood =false;
+                isGood = false;
             }
-
         }
-
         //linear-gradient(to bottom, #959595 0%,#0d0d0d 10%,#010101 70%,#0a0a0a 80%,#4e4e4e 90%,#383838 95%,#1b1b1b 100%)
         var htmlCount = '<div class="textCenter" style="font-weight: bold;background: linear-gradient(to bottom, #959595 0%,#0d0d0d 7%,#010101 85%,#0a0a0a 91%,#4e4e4e 93%,#383838 97%,#1b1b1b 100%);' +
             'border: 2px solid black;border-radius: 5px;padding: 1px;text-align: center;color: #4f85bb;height:38px;display: block; font-size: 14px;padding: 7px">';
-
         if ( isGood )
         {
             htmlCount += title1 + '<br/>';
@@ -578,18 +668,22 @@ function display() {
         htmlCount += '<div class="attackContent" style="font-size: 9px;color: #4f85bb;font-weight: bold;background: #111111;padding: 8px;">';
         for (var count in coordByNbAttaque )
         {
-            if ( count == "1")
+            if (count < maxRaid)
             {
-                htmlCount += count +' '+captionAttack+' :  <br />' + coordByNbAttaque[count] + ' <br/>';
-            }
-            else if (count < maxRaid )
-            {
-                htmlCount += count +' '+captionAttacks+' :  <br />' + coordByNbAttaque[count] + ' <br/>';
+                htmlCount += '<span style="font-weight: bold; font-size: 10px; padding: 3px;display: inline-block;">';
+                if (count == "1")
+                {
+                    htmlCount += count +' '+captionAttack+'  </span><br/>' + coordByNbAttaque[count] + ' <br/>';
+                }
+                else
+                {
+                    htmlCount += count +' '+captionAttacks+'  </span><br/>' + coordByNbAttaque[count] + ' <br/>';
+                }
             }
             else
             {
                 htmlCount += '<span style="font-weight: bold; color: rgb(128, 0, 0);">';
-                htmlCount += count +' '+captionAttacks+' :  <br />' + coordByNbAttaque[count] + ' <br/>';
+                htmlCount += count +' '+captionAttacks+'  <br />' + coordByNbAttaque[count] + ' <br/>';
                 htmlCount +='</span>';
             }
         }
@@ -632,27 +726,6 @@ function getBashTimespan()
     var date = new Date();
     date.setDate(date.getDate() - 1);
     return date;
-}
-
-// save function to read and parse a JSON cookie
-function getCookie(name)
-{
-    var result = {};
-    //log('read cookie: ' + name);
-    var cookie = $.cookie(name);
-    if (cookie)
-    {
-        try
-        {
-            result = $.parseJSON(cookie);
-        }
-        catch (exception)
-        {
-            // errors will be shown every time, but will not stop the script
-            console.log('ERROR: ' + exception);
-        }
-    }
-    return result;
 }
 
 function getDateFromMessage(msg, isSpy)
@@ -771,6 +844,7 @@ function getMessageAsync() {
                             switch (asyncHelper.tabId)
                             {
                                 case TABID_SPY_REPORT:
+                                    writeToLocalStorage(inactivePlayers, "InactivePlayers");
                                     asyncHelper.clearAsync();
                                     asyncHelper.startAsync(TABID_COMBAT_REPORT);
                                     getMessageAsync();
@@ -778,6 +852,7 @@ function getMessageAsync() {
                                 case TABID_COMBAT_REPORT:
                                     asyncHelper.clearAsync();
                                     // messages are loaded -> view the result
+                                    attackTracker.write();
                                     totalRess.calc(getBashTimespan());
                                     totalRess.save();
                                     display();
@@ -870,22 +945,7 @@ function loadInfo()
 
     displayLoadingGif();
     asyncHelper.startAsync(TABID_SPY_REPORT); // set the start values for the async process
-
-    // load cookies for faster execution, if checked today
-    var tabCoord = getCookie("tabCoord");
-    var tabCoordHeures = getCookie("tabCoordHeures");
-    var tabDefenderNames = getCookie("tabDefenderNames");
-
-    // check for the old version and transform it
-    var coord = Object.keys(tabCoordHeures)[0];
-    if (coord && tabCoordHeures[coord] && tabCoordHeures[coord].includes(' le '))
-    {
-        resetCookies();
-        tabCoord = {};
-        tabCoordHeures = {};
-        tabDefenderNames = {};
-    }
-    decOldTimes(tabCoordHeures, tabCoord, tabDefenderNames);
+    attackTracker.checkAttacks();
 
     // start search for inactive players -> async
     getMessageAsync();
@@ -897,12 +957,6 @@ function readCombatReports(page)
     try
     {
         var isSpyReport = false;
-        // load cookies
-        var tabCoord = getCookie("tabCoord");
-        var tabCoordHeures = getCookie("tabCoordHeures");
-        var tabDefenderNames = getCookie("tabDefenderNames");
-        var inactivePlayers = getCookie("tabInactivePlayers");
-
         var collEnfants = document.getElementsByClassName('msg');
 
         // 1 of 2 child are not of your bisness, and the first is the < << >> > button so start at 3 and +2
@@ -920,22 +974,10 @@ function readCombatReports(page)
             {
                 if (isAppendedToday(combatReport.date, isSpyReport))
                 {
-                    if (!tabCoord[combatReport.coord])
-                    {
-                        tabCoord[combatReport.coord] = 1;
-                        tabCoordHeures[combatReport.coord] = combatReport.date.toISOString() + '\n';
-                        tabDefenderNames[combatReport.coord] = combatReport.defenderName;
-                    }
-                    else
-                    {
-                        tabCoord[combatReport.coord] += 1;
-                        tabCoordHeures[combatReport.coord] += combatReport.date.toISOString() + '\n';
-                        tabDefenderNames[combatReport.coord] = combatReport.defenderName;
-                    }
+                    attackTracker.addAttack(combatReport);
                 }
                 else
                 {
-                    //log('Result false - Message Date: ' + date + ' Settings: ' + asyncHelper.lastCheck);
                     result = false;
                     break;
                 }
@@ -943,11 +985,6 @@ function readCombatReports(page)
             if (combatReport.attackerName != 'Unknown')
                 totalRess.append(combatReport);
         }
-
-        // end of collecting data time for some display
-        $.cookie("tabCoord", JSON.stringify(tabCoord), {expires: COOKIE_EXPIRES_DAYS});
-        $.cookie("tabCoordHeures", JSON.stringify(tabCoordHeures), {expires: COOKIE_EXPIRES_DAYS});
-        $.cookie("tabDefenderNames", JSON.stringify(tabDefenderNames), {expires: COOKIE_EXPIRES_DAYS});
     }
     catch(ex)
     {
@@ -960,7 +997,6 @@ function readCombatReports(page)
 function readSpyReports(page)
 {
     var result = true;
-    var inactivePlayers = getCookie("tabInactivePlayers");
 
     var messageList = document.getElementsByClassName('msg ');
     if (messageList)
@@ -1007,7 +1043,7 @@ function readSpyReports(page)
     {
         console.log("Error on readSpyReports(page): MessageList not found");
     }
-    $.cookie("tabInactivePlayers", JSON.stringify(inactivePlayers), {expires: COOKIE_EXPIRES_DAYS});
+
     return result;
 }
 
@@ -1025,22 +1061,20 @@ function resetCookies()
 {
     // resetCookies is only for debug operations or to transfor old date format to the new one
     log('reset cookies');
-    $.cookie('tabCoord', JSON.stringify({}), {expires: COOKIE_EXPIRES_DAYS});
-    $.cookie('tabCoordHeures', JSON.stringify({}), {expires: COOKIE_EXPIRES_DAYS});
-    $.cookie('tabDefenderNames', JSON.stringify({}), {expires: COOKIE_EXPIRES_DAYS});
-    if (!RESET_COOKIS)
+    if (!RESET_COOKIES)
     {
-        $.cookie('tabInactivePlayers', JSON.stringify({}), {expires: COOKIE_EXPIRES_DAYS});
         settings.lastCheckSpyReport = getBashTimespan();
+        deleteValueLocalStorage('InactivePlayers');
     }
 
     // to prevent that the cooies will be reseted every time
     settings.lastCheckCombatReport = getBashTimespan();
     settings.write();
 
-    deleteValueLocalStorage('Settings');
-    if (settings.lastVersion === '')
-        deleteValueLocalStorage('TotalRaidRessources');
+    //deleteValueLocalStorage('Settings');
+    //if (settings.lastVersion === '')
+    deleteValueLocalStorage('AttackTracker');
+    deleteValueLocalStorage('TotalRaidRessources');
 }
 
 function setStatus(msg)
@@ -1074,40 +1108,36 @@ function startScript()
         localeSettings.load();
         translate();
         settings.load();
+        attackTracker = new AttackTracker();
         if (settings.isNewVersion())
         {
             log('New Version detected!');
             resetCookies();
+            attackTracker.read();
         }
-        if (RESET_COOKIES) // for debug
-            resetCookies();
-        totalRess.load();
-        log(settings);
-
-        var tabCoordCookie = $.cookie("tabCoord");
-        if (typeof(tabCoordCookie) != 'undefined')
+        else if (RESET_COOKIES) // for debug
         {
-            display();
+            resetCookies();
         }
+
+        totalRess.load();
+
+        log('before load inactive players');
+        inactivePlayers = loadFromLocalStorage("InactivePlayers");
+        // secure that the inactive players will be load after the update
+        if (!inactivePlayers)
+        {
+            settings.lastCheckSpyReport = getBashTimespan();
+            inactivePlayers = {};
+        }
+
+        log(settings);
+        display();
     }
     catch(ex)
     {
         console.log("Error on startScript(): " + ex);
     }
-}
-
-function titleToDate(title)
-{
-    var result = getBashTimespan();
-    try
-    {
-        result = new Date(title);
-    }
-    catch (ex)
-    {
-        console.log('Error on titleToDate('+title+'): ' + ex);
-    }
-    return result;
 }
 
 function writeToLocalStorage(obj, key)
