@@ -4,7 +4,7 @@
 // @author      GeneralAnasazi
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
-// @version 3.3.0.2
+// @version 3.3.0.3
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
@@ -22,7 +22,7 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to set after a renew
-const VERSION_SCRIPT = '3.3.0.2';
+const VERSION_SCRIPT = '3.3.0.3';
 
 // debug consts
 const DEBUG = false; // set it to true enable debug messages -> log(msg)
@@ -316,12 +316,12 @@ function AttackTracker() {
         this.attacks.sort(function(left, right){
             var result = 0;
             if (left.count < right.count)
-                result = -1;
-            else if (left.count > right.count)
                 result = 1;
+            else if (left.count > right.count)
+                result = -1;
             else
             {
-                result = left.coord < right.coord ? -1 : (left.coord > right.coord ? -1 : 0);
+                result = left.coord.localeCompare(right.coord);
             }
             return result;
         });
@@ -633,8 +633,9 @@ function display() {
 
     try
     {
-        var isGood =true;
+        attackTracker.sortAttacks();
         var coordByNbAttaque = {};
+        var isGood =true;
 
         for (var i = 0; i < attackTracker.attacks.length; i++)
         {
