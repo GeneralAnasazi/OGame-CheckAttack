@@ -4,7 +4,7 @@
 // @author      GeneralAnasazi
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
-// @version 3.3.0.3
+// @version 3.3.0.4
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
@@ -22,7 +22,9 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to set after a renew
-const VERSION_SCRIPT = '3.3.0.3';
+const VERSION_SCRIPT = '3.3.0.4';
+// set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
+const VERSION_SCRIPT_RESET = '3.3.0.3';
 
 // debug consts
 const DEBUG = false; // set it to true enable debug messages -> log(msg)
@@ -225,28 +227,32 @@ function Attacks(combatReport) {
     this.checkAttacks = function() {
         var bashSpan = getBashTimespan();
         var i = 0;
-        log('checkAttacks ' + this.coord + ' ' + this.defenderName + ' ' + this.attackTimes.length);
-        while(i < this.attackTimes.length)
+        if (this.attackTimes)
         {
-            if (this.attackTimes[i] < bashSpan)
+            while(i < this.attackTimes.length && this.attackTimes.length !== 0)
             {
-                this.attackTimes.splice(i, 1);
-                this.count--;
+                if (this.attackTimes[i] < bashSpan)
+                {
+                    this.attackTimes.splice(i, 1);
+                    this.count--;
+                }
+                else
+                    i++;
             }
-            else
-                i++;
         }
         return this.count;
     };
     this.getTimesStr = function() {
         var result = '';
-        for (var i = 0; i < this.attackTimes.length; i++)
+        if (this.attackTimes)
         {
-            if (result !== '')
-                result += '\n';
-            result += this.attackTimes[i].toISOString();
+            for (var i = 0; i < this.attackTimes.length; i++)
+            {
+                if (result !== '')
+                    result += '\n';
+                result += this.attackTimes[i].toISOString();
+            }
         }
-
         return result;
     };
     this.setValues = function(attack) {
@@ -278,9 +284,6 @@ function AttackTracker() {
         var idx = this.attacks.findIndex(x => x.coord == combatReport.coord && x.moon == combatReport.moon);
         if (idx > -1)
         {
-            log('attack found at ' + idx);
-            log(this.attacks[idx]);
-            log(combatReport);
             this.attacks[idx].addAttack(combatReport);
         }
         else
@@ -288,12 +291,15 @@ function AttackTracker() {
     };
     this.checkAttacks = function() {
         var i = 0;
-        while ( i < this.attacks.length)
+        while (i < this.attacks.length && this.attacks.length !== 0)
         {
-            if (this.attacks[i].checkAttacks() > 0)
-                i++;
+            if (!this.attacks[i] || inactivePlayers[this.attacks[i].defenderName] =='i' ||
+                this.attacks[i].checkAttacks() === 0)
+            {
+                this.attacks.splice(i, 1);
+            }
             else
-                this.attacks.slice(i, 1);
+                i++;
         }
     };
     this.clear = function() {
@@ -304,27 +310,35 @@ function AttackTracker() {
         var obj = loadFromLocalStorage('AttackTracker');
         if (obj)
         {
+            log('loaded obj from storage');
+            log(obj);
             for (var i = 0; i < obj.attacks.length; i++)
             {
-                var att = new Attacks();
-                att.setValues(obj.attacks[i]);
-                this.attacks.push(att);
+                if (obj.attacks[i])
+                {
+                    var att = new Attacks();
+                    att.setValues(obj.attacks[i]);
+                    this.attacks.push(att);
+                }
             }
         }
     };
     this.sortAttacks = function() {
-        this.attacks.sort(function(left, right){
-            var result = 0;
-            if (left.count < right.count)
-                result = 1;
-            else if (left.count > right.count)
-                result = -1;
-            else
-            {
-                result = left.coord.localeCompare(right.coord);
-            }
-            return result;
-        });
+        if (this.attacks)
+        {
+            this.attacks.sort(function(left, right){
+                var result = 0;
+                if (left.count < right.count)
+                    result = 1;
+                else if (left.count > right.count)
+                    result = -1;
+                else
+                {
+                    result = left.coord.localeCompare(right.coord);
+                }
+                return result;
+            });
+        }
     };
     this.toHtml = function() {
         var result = '';
@@ -336,7 +350,7 @@ function AttackTracker() {
     };
     this.write = function() {
         this.sortAttacks();
-        writeToLocalStorage(this, 'AttackTracker');
+        //writeToLocalStorage(this, 'AttackTracker');
     };
 
     // on create
@@ -944,9 +958,13 @@ function loadInfo()
     if (asyncHelper.started())
         return;
 
+    log('start again');
     displayLoadingGif();
     asyncHelper.startAsync(TABID_SPY_REPORT); // set the start values for the async process
+    log('start check attack');
     attackTracker.checkAttacks();
+    log(attackTracker);
+    log('end check attack');
 
     // start search for inactive players -> async
     getMessageAsync();
@@ -1113,8 +1131,11 @@ function startScript()
         if (settings.isNewVersion())
         {
             log('New Version detected!');
-            resetCookies();
-            attackTracker.read();
+            if (settings.lastVersion.localeCompare(VERSION_SCRIPT_RESET) == 1)
+            {
+                resetCookies();
+                attackTracker.read();
+            }
         }
         else if (RESET_COOKIES) // for debug
         {
