@@ -27,7 +27,7 @@ const VERSION_SCRIPT = '3.3.0.5';
 const VERSION_SCRIPT_RESET = '3.3.0.3';
 
 // debug consts
-const DEBUG = false; // set it to true enable debug messages -> log(msg)
+const DEBUG = true; // set it to true enable debug messages -> log(msg)
 const RESET_COOKIES = false;
 
 
@@ -420,18 +420,21 @@ function Ressources(span) {
         this.total = 0;
     };
     this.load = function(span) {
-        if (span)
+        if (span && span.innerHTML)
         {
             try
             {
                 var arr = span.getAttribute('title').split('<br/>');
-                this.metal = extractRess(arr[1]);
-                this.crystal = extractRess(arr[2]);
-                this.deuterium = extractRess(arr[3]);
-                this.total = extractRess(span.innerHTML);
-                if (!ressourceTitles.isLoaded())
+                if (arr.length > 3)
                 {
-                    ressourceTitles.load(arr);
+                    this.metal = extractRess(arr[1]);
+                    this.crystal = extractRess(arr[2]);
+                    this.deuterium = extractRess(arr[3]);
+                    this.total = extractRess(span.innerHTML);
+                    if (!ressourceTitles.isLoaded())
+                    {
+                        ressourceTitles.load(arr);
+                    }
                 }
             }
             catch (ex)
@@ -469,6 +472,7 @@ function Ressources(span) {
 
 function TotalRessources()  {
     this.combatReports = [];
+    this.inactivePlayersLength = -1;
     this.lastCalcLength = -1;
     this.lastCombatReport = getBashTimespan();
     this.ressources = new Ressources();
@@ -568,10 +572,13 @@ function TotalRessources()  {
             // Ressources
             this.ressources.setValues(obj.ressources);
             this.lastCombatReport = new Date(obj.lastCombatReport);
+            this.inactivePlayersLength = obj.inactivePlayersLength;
+            this.lastCalcLength = obj.lastCalcLength;
         }
         ressourceTitles.read();
     };
     this.save = function() {
+        this.lastCombatReport = this.combatReports.length;
         writeToLocalStorage(this, 'TotalRaidRessources');
         ressourceTitles.write();
     };
@@ -1077,6 +1084,13 @@ function onLoadPage()
             }
             if (combatReportAdded)
                 checkRaidFinished();
+            if (inactivePlayers && totalRess.inactivePlayersLength != Object.keys(inactivePlayers).length)
+            {
+                totalRess.inactivePlayersLength = Object.keys(inactivePlayers).length;
+                writeToLocalStorage(inactivePlayers, "InactivePlayers");
+                totalRess.save();
+                log('write inactive players');
+            }
             result = true;
         }
     }
