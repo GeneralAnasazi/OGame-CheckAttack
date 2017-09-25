@@ -27,12 +27,12 @@ const VERSION_SCRIPT = '3.3.0.5';
 const VERSION_SCRIPT_RESET = '3.3.0.3';
 
 // debug consts
-const DEBUG = true; // set it to true enable debug messages -> log(msg)
+const DEBUG = false; // set it to true enable debug messages -> log(msg)
 const RESET_COOKIES = false;
 
 
 // **************************************************************************
-var test = true;
+var test = false;
 
 // globale vars
 var inactivePlayers = null;
