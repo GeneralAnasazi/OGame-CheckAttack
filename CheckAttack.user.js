@@ -4,7 +4,7 @@
 // @author      GeneralAnasazi
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
-// @version 3.3.0.5
+// @version 3.3.0.6
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
@@ -32,9 +32,9 @@ const RESET_COOKIES = false;
 
 
 // **************************************************************************
+var test = false;
 
 // globale vars
-var attackTracker = null;
 var inactivePlayers = null;
 var language = document.getElementsByName('ogame-language')[0].content;
 var playerName = document.getElementsByName('ogame-player-name')[0].content;
@@ -104,6 +104,12 @@ var asyncHelper = {
     }
 };
 
+var autoLoad = {
+    combatReports: {},
+    others: {},
+    spys: {}
+};
+
 var localeSettings = {
     decimalSeperator: '',
     thousandSeperator: '',
@@ -112,12 +118,12 @@ var localeSettings = {
         var localeStr = number.toLocaleString();
         if (localeStr.includes(','))
         {
-            this.decimalSeparator = ',';
+            this.decimalSeperator = ',';
             this.thousandSeperator = '.';
         }
         else
         {
-            this.decimalSeparator = '.';
+            this.decimalSeperator = '.';
             this.thousandSeperator = ',';
         }
     },
@@ -125,11 +131,17 @@ var localeSettings = {
         var result = -1;
         var strNumber = str.replace(this.thousandSeperator, '');
         if (this.decimalSeperator == ',')
-            strNumber = str.replace(',', '.');
+        {
+            strNumber = strNumber.replace(',', '.');
+        }
         var isMillion = strNumber.includes('M');
         result = parseFloat(strNumber);
         if (isMillion)
-            result = parseFloat(result * 1000000);
+        {
+            log('is Million: ' + strNumber + ' Result: ' + result);
+            result = result * 1000 * 1000;
+        }
+        log('end result: ' + result);
         return result;
     }
 };
@@ -197,12 +209,14 @@ var settings = {
             }
         }
     },
+    showDialog: function() {
+
+    },
     write: function() {
         this.lastVersion = VERSION_SCRIPT;
         writeToLocalStorage(this, 'Settings');
     }
 }; // cookie tabSettings
-
 
 /***** CONSTRUCTORS ***********************************************************/
 
@@ -223,24 +237,6 @@ function Attacks(combatReport) {
             this.moon = combatReport.moon;
             this.count++;
         }
-    };
-    this.checkAttacks = function() {
-        var bashSpan = getBashTimespan();
-        var i = 0;
-        if (this.attackTimes)
-        {
-            while(i < this.attackTimes.length && this.attackTimes.length !== 0)
-            {
-                if (this.attackTimes[i] < bashSpan)
-                {
-                    this.attackTimes.splice(i, 1);
-                    this.count--;
-                }
-                else
-                    i++;
-            }
-        }
-        return this.count;
     };
     this.getTimesStr = function() {
         var result = '';
@@ -281,7 +277,7 @@ function AttackTracker() {
 
     /***** METHODS *****/
     this.addAttack = function(combatReport) {
-        var idx = this.attacks.findIndex(x => x.coord == combatReport.coord && x.moon == combatReport.moon);
+        var idx = this.attacks.findIndex(el => el.coord == combatReport.coord && el.moon == combatReport.moon);
         if (idx > -1)
         {
             this.attacks[idx].addAttack(combatReport);
@@ -289,39 +285,8 @@ function AttackTracker() {
         else
             this.attacks.push(new Attacks(combatReport));
     };
-    this.checkAttacks = function() {
-        var i = 0;
-        while (i < this.attacks.length && this.attacks.length !== 0)
-        {
-            if (!this.attacks[i] || inactivePlayers[this.attacks[i].defenderName] =='i' ||
-                this.attacks[i].checkAttacks() === 0)
-            {
-                this.attacks.splice(i, 1);
-            }
-            else
-                i++;
-        }
-    };
     this.clear = function() {
         this.attacks = [];
-    };
-    this.read = function() {
-        this.clear();
-        var obj = loadFromLocalStorage('AttackTracker');
-        if (obj)
-        {
-            log('loaded obj from storage');
-            log(obj);
-            for (var i = 0; i < obj.attacks.length; i++)
-            {
-                if (obj.attacks[i])
-                {
-                    var att = new Attacks();
-                    att.setValues(obj.attacks[i]);
-                    this.attacks.push(att);
-                }
-            }
-        }
     };
     this.sortAttacks = function() {
         if (this.attacks)
@@ -340,6 +305,22 @@ function AttackTracker() {
             });
         }
     };
+    this.read = function() {
+        this.clear();
+        var obj = loadFromLocalStorage('AttackTracker');
+        if (obj)
+        {
+            for (var i = 0; i < obj.attacks.length; i++)
+            {
+                if (obj.attacks[i])
+                {
+                    var att = new Attacks();
+                    att.setValues(obj.attacks[i]);
+                    this.attacks.push(att);
+                }
+            }
+        }
+    };
     this.toHtml = function() {
         var result = '';
         for (var i = 0; i < this.attacks.length; i++)
@@ -352,9 +333,6 @@ function AttackTracker() {
         this.sortAttacks();
         writeToLocalStorage(this, 'AttackTracker');
     };
-
-    // on create
-    this.read();
 }
 
 function CombatReport(msg) {
@@ -410,6 +388,7 @@ function CombatReport(msg) {
         this.date = new Date(obj.date);
         this.debrisField = obj.debrisField;
         this.defenderName = obj.defenderName;
+        this.moon = obj.moon;
         this.ressources = new Ressources();
         this.ressources.setValues(obj.ressources);
     };
@@ -434,10 +413,10 @@ function Ressources(span) {
             try
             {
                 var arr = span.getAttribute('title').split('<br/>');
-                this.metal = localeSettings.parseFloat(arr[1].split(': ')[1]);
-                this.crystal = localeSettings.parseFloat(arr[2].split(': ')[1]);
-                this.deuterium = localeSettings.parseFloat(arr[3].split(': ')[1]);
-                this.total = localeSettings.parseFloat(span.innerHTML.split(': ')[1]);
+                this.metal = extractRess(arr[1]);
+                this.crystal = extractRess(arr[2]);
+                this.deuterium = extractRess(arr[3]);
+                this.total = extractRess(span.innerHTML);
                 if (!ressourceTitles.isLoaded())
                 {
                     ressourceTitles.load(arr);
@@ -445,7 +424,7 @@ function Ressources(span) {
             }
             catch (ex)
             {
-                console.log('Error Ressources.load(span):' + ex);
+                console.log('Error Ressources.load(span): ' + ex);
             }
         }
     };
@@ -478,46 +457,90 @@ function Ressources(span) {
 
 function TotalRessources()  {
     this.combatReports = [];
+    this.lastCalcLength = -1;
     this.lastCombatReport = getBashTimespan();
     this.ressources = new Ressources();
 
     /*** METHODS *********************/
     this.append = function(combatReport) {
-        if (combatReport && combatReport.ressources && combatReport.date > settings.lastCheckCombatReport)
+        var result = false;
+        if (combatReport && combatReport.ressources)
         {
-            this.combatReports.push(combatReport);
-            if (combatReport.ressources.metal)
-                this.ressources.metal += combatReport.ressources.metal;
-            if (combatReport.ressources.crystal)
-                this.ressources.crystal += combatReport.ressources.crystal;
-            if (combatReport.ressources.deuterium)
-                this.ressources.deuterium += combatReport.ressources.deuterium;
-            if (combatReport.ressources.total)
-                this.ressources.total += combatReport.ressources.total;
-        }
-    };
-    this.calc = function(date) {
-        this.ressources.clear();
-        this.sortByDateDesc();
-        log(this.combatReports);
-        for (var i = 0; i < this.combatReports.length; i++)
-        {
-            if ((this.combatReports[i].date > date && this.combatReports[i].ressources))
+            var found = this.combatReports.findIndex(el => el.coord == combatReport.coord && el.date.getTime() == combatReport.date.getTime() && el.moon === combatReport.moon);
+            if (found == -1) // combat report doesn't exist
             {
-                if (this.combatReports[i].ressources.metal && !Number.isNaN(this.combatReports[i].ressources.metal))
-                    this.ressources.metal += this.combatReports[i].ressources.metal;
-                if (this.combatReports[i].ressources.crystal && !Number.isNaN(this.combatReports[i].ressources.crystal))
-                    this.ressources.crystal += this.combatReports[i].ressources.crystal;
-                if (this.combatReports[i].ressources.deuterium && !Number.isNaN(this.combatReports[i].ressources.deuterium))
-                    this.ressources.deuterium += this.combatReports[i].ressources.deuterium;
-                if (this.combatReports[i].ressources.total && !Number.isNaN(this.combatReports[i].ressources.total))
-                    this.ressources.total += this.combatReports[i].ressources.total;
+                result = true;
+                this.combatReports.push(combatReport);
+                if (combatReport.ressources.metal)
+                    this.ressources.metal += combatReport.ressources.metal;
+                if (combatReport.ressources.crystal)
+                    this.ressources.crystal += combatReport.ressources.crystal;
+                if (combatReport.ressources.deuterium)
+                    this.ressources.deuterium += combatReport.ressources.deuterium;
+                if (combatReport.ressources.total)
+                    this.ressources.total += combatReport.ressources.total;
             }
         }
+        return result;
+    };
+    this.calc = function(date) {
+        var result = false;
+        if (!date)
+            date = getBashTimespan();
+        if (this.lastCalcLength != this.combatReports.length)
+        {
+            this.lastCalcLength = this.combatReports.length;
+            this.ressources.clear();
+            this.sortByDateDesc();
+            log(this.combatReports);
+            for (var i = 0; i < this.combatReports.length; i++)
+            {
+                if ((this.combatReports[i].date > date && this.combatReports[i].ressources))
+                {
+                    if (this.combatReports[i].ressources.metal && !Number.isNaN(this.combatReports[i].ressources.metal))
+                        this.ressources.metal += this.combatReports[i].ressources.metal;
+                    if (this.combatReports[i].ressources.crystal && !Number.isNaN(this.combatReports[i].ressources.crystal))
+                        this.ressources.crystal += this.combatReports[i].ressources.crystal;
+                    if (this.combatReports[i].ressources.deuterium && !Number.isNaN(this.combatReports[i].ressources.deuterium))
+                        this.ressources.deuterium += this.combatReports[i].ressources.deuterium;
+                    if (this.combatReports[i].ressources.total && !Number.isNaN(this.combatReports[i].ressources.total))
+                        this.ressources.total += this.combatReports[i].ressources.total;
+                }
+            }
+            result = true;
+        }
+        return result;
     };
     this.clear = function() {
         this.combatReports = [];
         this.ressources.clear();
+    };
+    this.getAttacks = function() {
+        if (!inactivePlayers)
+        {
+            console.log('Error on TotalRessources.getAttacks(): inactivePlayers(null) are not loaded');
+            return null;
+        }
+
+        var result = new AttackTracker();
+        result.clear();
+        var bashTimespan = getBashTimespan();
+
+        for (var i = 0; i < this.combatReports.length; i++)
+        {
+            if ((inactivePlayers[this.combatReports[i].defenderName] != 'i' || inactivePlayers == {}) &&
+                // exclude attacks of your self and attacks from
+                this.combatReports[i].defenderName != playerName &&
+                this.combatReports[i].defenderName != 'Unknown') // exclude Spy Attacks and total destroyed in the first round
+            {
+                if (this.combatReports[i].date >= bashTimespan)
+                    result.addAttack(this.combatReports[i]);
+                else
+                    break;
+            }
+        }
+        result.sortAttacks();
+        return result;
     };
     this.load = function() {
         var obj = loadFromLocalStorage('TotalRaidRessources');
@@ -589,11 +612,29 @@ function setTranslationVars(aTitle1, aTitle2, aTitle3, aCaptionAttack, aCaptionA
     captionAttacks = aCaptionAttacks;
 }
 
+function addCssLink(url)
+{
+    var link = document.createElement('link');
+    link.setAttribute('rel', 'stylesheet');
+    link.setAttribute('type', 'text/css .css');
+    link.setAttribute('href', url);
+    document.getElementsByTagName('head')[0].appendChild(link);
+}
+
 function coordToUrl(coord)
 {
 	 var coordClean = coord.substring(1, coord.length-1);
 	 var coordTab = coordClean.split(":");
 	 return '/game/index.php?page=galaxy&galaxy='+coordTab[0]+'&system='+coordTab[1]+'&position='+coordTab[2] ;
+}
+
+function checkRaidFinished()
+{
+    if (totalRess.calc(getBashTimespan()))
+    {
+        totalRess.save();
+        display();
+    }
 }
 
 function compareByDate(left, right) {
@@ -642,12 +683,12 @@ function deleteValueLocalStorage(key)
 
 function display() {
 	log('start to display');
-    log(attackTracker);
     var maxRaid = 6;
 
     try
     {
-        attackTracker.sortAttacks();
+        var attackTracker = totalRess.getAttacks();
+        log(attackTracker);
         var coordByNbAttaque = {};
         var isGood =true;
 
@@ -665,9 +706,10 @@ function display() {
                 isGood = false;
             }
         }
+
         //linear-gradient(to bottom, #959595 0%,#0d0d0d 10%,#010101 70%,#0a0a0a 80%,#4e4e4e 90%,#383838 95%,#1b1b1b 100%)
-        var htmlCount = '<div class="textCenter" style="font-weight: bold;background: linear-gradient(to bottom, #959595 0%,#0d0d0d 7%,#010101 85%,#0a0a0a 91%,#4e4e4e 93%,#383838 97%,#1b1b1b 100%);' +
-            'border: 2px solid black;border-radius: 5px;padding: 1px;text-align: center;color: #4f85bb;height:38px;display: block; font-size: 14px;padding: 7px">';
+        var htmlCount = '<div class="textCenter" style="font-weight: bold; background: linear-gradient(to bottom, #959595 0%,#0d0d0d 7%,#010101 85%,#0a0a0a 91%,#4e4e4e 93%,#383838 97%,#1b1b1b 100%);' +
+            'border: 2px solid black; border-radius: 5px; padding: 1px; text-align: center; color: #4f85bb; height:38px; display: block; font-size: 14px; padding: 7px;">';
         if ( isGood )
         {
             htmlCount += title1 + '<br/>';
@@ -677,12 +719,18 @@ function display() {
         {
             htmlCount += '<span style="font-weight: bold; color: rgb(128, 0, 0); font-size: 14px;">'+title3+'</span>';
         }
+
         htmlCount += '</div>';
 
         // start content div
         htmlCount += '<div class="attackContent" style="font-size: 9px;color: #4f85bb;font-weight: bold;background: #111111;padding: 8px;">';
-        for (var count in coordByNbAttaque )
+
+        var keys = Object.keys(coordByNbAttaque);
+        keys.sort(function(a, b) { return b-a; });
+
+        for (var k = 0; k < keys.length; k++)
         {
+            var count = keys[k];
             if (count < maxRaid)
             {
                 htmlCount += '<span style="font-weight: bold; font-size: 10px; padding: 3px;display: inline-block;">';
@@ -713,6 +761,8 @@ function display() {
         info.innerHTML=htmlCount;
 
         replaceElement(LINKS_TOOLBAR_BUTTONS_ID, DIV_STATUS_ID, info);
+        var rect = info.getBoundingClientRect();
+        //TODO: Scrollbar anpassen
     }
     catch (ex)
     {
@@ -734,6 +784,29 @@ function displayLoadingGif()
     info.getElementsByTagName('div')[0].appendChild(span);
 
     replaceElement(LINKS_TOOLBAR_BUTTONS_ID, DIV_STATUS_ID, info);
+}
+
+function extractRess(res)
+{
+    if (/, /.test(res))
+        res =trim(res.split(', ')[0]);
+    if(/:/.test(res))
+        res =trim(res.split(':')[1]);
+    else
+        res=trim(res);
+
+
+    if(/^[0-9]{1,3}\.[0-9]{3}$/.test(res))
+        res=res.replace(/\./g,'');
+    else if (/^([0-9]{1,3}(\.|,))?[0-9]{1,3}(Md|Bn|Mrd)/.test(res))
+        res=res.replace(/,/g,'.').replace(/Md|Bn|Mrd/g,'')*1000000000;
+    else if (/^([0-9]{1,3}(\.|,))?[0-9]{1,3}(M|m)/.test(res))
+        res=res.replace(/,/g,'.').replace(/(M|m)/g,'')*1000000;
+    else
+        res = res.replace(/\./g,'');
+
+
+    return parseInt(res);
 }
 
 function getBashTimespan()
@@ -866,11 +939,7 @@ function getMessageAsync() {
                                     break;
                                 case TABID_COMBAT_REPORT:
                                     asyncHelper.clearAsync();
-                                    // messages are loaded -> view the result
-                                    attackTracker.write();
-                                    totalRess.calc(getBashTimespan());
-                                    totalRess.save();
-                                    display();
+                                    checkRaidFinished();
                                     break;
                             }
                         }
@@ -958,16 +1027,48 @@ function loadInfo()
     if (asyncHelper.started())
         return;
 
-    log('start again');
     displayLoadingGif();
     asyncHelper.startAsync(TABID_SPY_REPORT); // set the start values for the async process
-    log('start check attack');
-    attackTracker.checkAttacks();
-    log(attackTracker);
-    log('end check attack');
 
     // start search for inactive players -> async
     getMessageAsync();
+}
+
+function onLoadPage()
+{
+    var result = false;
+    if(/page=message/.test(location.href))
+    {
+        var msgList = document.getElementsByClassName('msg');
+        if (msgList[0])
+        {
+            var combatReportAdded = false;
+            for (var i = 0; i < msgList.length; i++)
+            {
+                // is a combat report page loaded
+                if (msgList[i].getElementsByClassName('combatLeftSide')[0])
+                {
+                    var combatReport = new CombatReport(msgList[i]);
+                    if (combatReport.attackerName != 'Unknown')
+                    {
+                        combatReportAdded = combatReportAdded || totalRess.append(combatReport);
+                    }
+                }
+                else // look for other reports
+                {
+                    var apiKey = msgList[i].getAttribute('data-api-key');
+                    if (apiKey && apiKey.startsWith('sr-'))
+                    {
+                        readSpyReport(msgList[i]);
+                    }
+                }
+            }
+            if (combatReportAdded)
+                checkRaidFinished();
+            result = true;
+        }
+    }
+    return result;
 }
 
 function readCombatReports(page)
@@ -986,20 +1087,10 @@ function readCombatReports(page)
             if (page == 1 && i === 0)
                 asyncHelper.lastCheck = combatReport.date;
 
-            if ((inactivePlayers[combatReport.defenderName] != 'i' || inactivePlayers == {}) &&
-                // exclude attacks of your self and attacks from
-                combatReport.defenderName != playerName &&
-                combatReport.defenderName != 'Unknown') // exclude Spy Attacks and total destroyed in the first round
+            if (!isAppendedToday(combatReport.date, isSpyReport))
             {
-                if (isAppendedToday(combatReport.date, isSpyReport))
-                {
-                    attackTracker.addAttack(combatReport);
-                }
-                else
-                {
-                    result = false;
-                    break;
-                }
+                result = false;
+                break;
             }
             if (combatReport.attackerName != 'Unknown')
                 totalRess.append(combatReport);
@@ -1011,6 +1102,30 @@ function readCombatReports(page)
         result = false;
     }
     return result;
+}
+
+function readSpyReport(msg)
+{
+    //<span class="status_abbr_longinactive">&nbsp;&nbsp;Felcken</span>
+    var inactiveSpan = msg.getElementsByClassName('status_abbr_longinactive');
+    if (!inactiveSpan[0])
+        inactiveSpan = msg.getElementsByClassName('status_abbr_inactive');
+    if (inactiveSpan[0])
+    {
+        //read player name
+        var initplayerName = inactiveSpan[0].innerHTML + '';
+        var playerName = initplayerName.replace('&nbsp;', '');
+
+        // check if an inner html there
+        if (playerName.substring(0, 1) == '<')
+        {
+            var idx = playerName.lastIndexOf('&nbsp;');
+            playerName = playerName.substr(idx + 6, playerName.length - (idx + 6));
+        }
+        playerName = playerName.replace('&nbsp;', '');
+        if (playerName.substring(0, 1) != '(' && playerName.substring(0, 1) != '<')
+            inactivePlayers[playerName] = 'i';
+    }
 }
 
 function readSpyReports(page)
@@ -1030,26 +1145,7 @@ function readSpyReports(page)
 
             if (isAppendedToday(msgDate, true))
             {
-                //<span class="status_abbr_longinactive">&nbsp;&nbsp;Felcken</span>
-                var inactiveSpan = messageList[i].getElementsByClassName('status_abbr_longinactive');
-                if (!inactiveSpan[0])
-                    inactiveSpan = messageList[i].getElementsByClassName('status_abbr_inactive');
-                if (inactiveSpan[0])
-                {
-                    //read player name
-                    var initplayerName = inactiveSpan[0].innerHTML + '';
-                    var playerName = initplayerName.replace('&nbsp;', '');
-
-                    // check if an inner html there
-                    if (playerName.substring(0, 1) == '<')
-                    {
-                        var idx = playerName.lastIndexOf('&nbsp;');
-                        playerName = playerName.substr(idx + 6, playerName.length - (idx + 6));
-                    }
-                    playerName = playerName.replace('&nbsp;', '');
-                    if (playerName.substring(0, 1) != '(' && playerName.substring(0, 1) != '<')
-                        inactivePlayers[playerName] = 'i';
-                }
+                readSpyReport(messageList[i]);
             }
             else
             {
@@ -1086,13 +1182,10 @@ function resetCookies()
         deleteValueLocalStorage('InactivePlayers');
     }
 
-    // to prevent that the cooies will be reseted every time
     settings.lastCheckCombatReport = getBashTimespan();
     settings.write();
 
-    //deleteValueLocalStorage('Settings');
-    //if (settings.lastVersion === '')
-    deleteValueLocalStorage('AttackTracker');
+    deleteValueLocalStorage('AttackTracker'); // not more used in local storage
     deleteValueLocalStorage('TotalRaidRessources');
 }
 
@@ -1112,6 +1205,7 @@ function startScript()
 {
     try
     {
+        //addCssLink('https://github.com/GeneralAnasazi/OGame-CheckAttack/blob/master/CheckAttackStyles.css');
         // button for checking
         var btn = document.createElement("a");
         btn.innerHTML="Check Raid";
@@ -1127,14 +1221,12 @@ function startScript()
         localeSettings.load();
         translate();
         settings.load();
-        attackTracker = new AttackTracker();
         if (settings.isNewVersion())
         {
             log('New Version detected!');
             if (settings.lastVersion.localeCompare(VERSION_SCRIPT_RESET) == 1)
             {
                 resetCookies();
-                attackTracker.read();
             }
         }
         else if (RESET_COOKIES) // for debug
@@ -1144,7 +1236,6 @@ function startScript()
 
         totalRess.load();
 
-        log('before load inactive players');
         inactivePlayers = loadFromLocalStorage("InactivePlayers");
         // secure that the inactive players will be load after the update
         if (!inactivePlayers)
@@ -1153,6 +1244,8 @@ function startScript()
             inactivePlayers = {};
         }
 
+        if (test)
+            setInterval(onLoadPage, 700);
         log(settings);
         display();
     }
@@ -1160,6 +1253,11 @@ function startScript()
     {
         console.log("Error on startScript(): " + ex);
     }
+}
+
+function trim(string)
+{
+    return string.replace(/(^\s*)|(\s*$)/g,'');
 }
 
 function writeToLocalStorage(obj, key)
