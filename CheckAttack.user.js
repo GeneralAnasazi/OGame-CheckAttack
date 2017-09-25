@@ -32,7 +32,7 @@ const RESET_COOKIES = false;
 
 
 // **************************************************************************
-var test = false;
+var test = true;
 
 // globale vars
 var inactivePlayers = null;
@@ -362,7 +362,7 @@ function CombatReport(msg) {
                 this.defenderName = getDefender(msg);
 
                 var combatLeftSide = msg.getElementsByClassName('combatLeftSide')[0];
-                if (combatLeftSide)
+                if (combatLeftSide && this.defenderName != 'Unknown')
                 {
                     //TODO: Bei über einer Million werden die Daten abgeschnitten -> Bug fix
                     var spanList = combatLeftSide.getElementsByTagName('span');
@@ -394,6 +394,18 @@ function CombatReport(msg) {
     };
     // load from message
     this.load(msg);
+}
+
+function CollectingReport(msg) {
+    this.coord = null;
+    this.date = null;
+    this.moon = false;
+    //ress
+    this.metal = 0;
+    this.crystal = 0;
+    this.parseMessage = function(msg) {
+
+    };
 }
 
 function Ressources(span) {
@@ -1113,18 +1125,21 @@ function readSpyReport(msg)
     if (inactiveSpan[0])
     {
         //read player name
-        var initplayerName = inactiveSpan[0].innerHTML + '';
-        var playerName = initplayerName.replace('&nbsp;', '');
-
-        // check if an inner html there
-        if (playerName.substring(0, 1) == '<')
+        var initplayerName = inactiveSpan[0].innerHTML;
+        if (initplayerName)
         {
-            var idx = playerName.lastIndexOf('&nbsp;');
-            playerName = playerName.substr(idx + 6, playerName.length - (idx + 6));
+            var playerName = initplayerName.replace('&nbsp;', '');
+
+            // check if an inner html there
+            if (playerName.substring(0, 1) == '<')
+            {
+                var idx = playerName.lastIndexOf('&nbsp;');
+                playerName = playerName.substr(idx + 6, playerName.length - (idx + 6));
+            }
+            playerName = playerName.replace('&nbsp;', '');
+            if (playerName.substring(0, 1) != '(' && playerName.substring(0, 1) != '<')
+                inactivePlayers[playerName] = 'i';
         }
-        playerName = playerName.replace('&nbsp;', '');
-        if (playerName.substring(0, 1) != '(' && playerName.substring(0, 1) != '<')
-            inactivePlayers[playerName] = 'i';
     }
 }
 
@@ -1245,7 +1260,7 @@ function startScript()
         }
 
         if (test)
-            setInterval(onLoadPage, 700);
+            setInterval(onLoadPage, 400);
         log(settings);
         display();
     }
