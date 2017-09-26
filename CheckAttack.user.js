@@ -27,7 +27,7 @@ const VERSION_SCRIPT = '3.3.0.8';
 const VERSION_SCRIPT_RESET = '3.3.0.8';
 
 // debug consts
-const DEBUG = true; // set it to true enable debug messages -> log(msg)
+const DEBUG = false; // set it to true enable debug messages -> log(msg)
 const RESET_COOKIES = false;
 
 
