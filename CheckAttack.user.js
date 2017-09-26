@@ -4,7 +4,7 @@
 // @author      GeneralAnasazi
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
-// @version 3.3.0.7
+// @version 3.3.0.8
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
@@ -22,12 +22,12 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to set after a renew
-const VERSION_SCRIPT = '3.3.0.7';
+const VERSION_SCRIPT = '3.3.0.8';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
-const VERSION_SCRIPT_RESET = '3.3.0.7';
+const VERSION_SCRIPT_RESET = '3.3.0.8';
 
 // debug consts
-const DEBUG = false; // set it to true enable debug messages -> log(msg)
+const DEBUG = true; // set it to true enable debug messages -> log(msg)
 const RESET_COOKIES = false;
 
 
@@ -181,9 +181,9 @@ var settings = {
     lastCheckCombatReport: getBashTimespan(),
     // last readed message from spy report
     lastCheckSpyReport: getBashTimespan(),
-    lastVersion: '',
+    lastVersion: '0',
     isNewVersion: function() {
-        return compareVersion(this.lastVersion, VERSION_SCRIPT) !== 0;
+        return compareVersion(this.lastVersion, VERSION_SCRIPT) < 0;
     },
     load: function() {
         var obj = loadFromLocalStorage('Settings');
@@ -391,14 +391,40 @@ function CollectingReport(msg) {
             if (span[0])
             {
                 var text = span[0].innerHTML;
-                var sentences = text.split('<br>');
-                if (sentences[sentences.length - 1].includes(ressourceTitles.deuterium) && sentences.length > 2)
+                var sentences = text.split('. ');
+                if (sentences.length > 2 && sentences[sentences.length - 1].includes(ressourceTitles.metal))
                 {
+                    var words = sentences[2].split(' ');
                     this.ressources = new Ressources();
-                    log(sentences[sentences.length - 3]);
-                    this.ressources.metal = extractRess(sentences[sentences.length - 3]);
-                    this.ressources.crystal = extractRess(sentences[sentences.length - 2]);
-                    this.ressources.deuterium = extractRess(sentences[sentences.length - 1]);
+                    var i = words.length - 1;
+                    var metal = ressourceTitles.metal + ': ';
+                    var crystal = ressourceTitles.metal + ': ';
+                    var deuterium = ressourceTitles.deuterium + ': '; // usally not needed but nobody knows what's happend in the future
+                    while (i > -1)
+                    {
+                        if (words[i] == ressourceTitles.metal)
+                        {
+                            metal += words[i-1];
+                            i -= 2;
+                        }
+                        else if (words[i] == ressourceTitles.crystal)
+                        {
+                            crystal += words[i-1];
+                            i -= 2;
+                        }
+                        else if (words[i] == ressourceTitles.deuterium)
+                        {
+                            deuterium += words[i-1];
+                            i -= 2;
+                        }
+                        else
+                            i--;
+                    }
+                    if (deuterium == ressourceTitles.deuterium + ': ')
+                        deuterium += '0';
+                    this.ressources.metal = extractRess(metal);
+                    this.ressources.crystal = extractRess(crystal);
+                    this.ressources.deuterium = extractRess(deuterium);
                     this.ressources.total = this.ressources.metal + this.ressources.crystal + this.ressources.deuterium;
                 }
             }
@@ -796,7 +822,7 @@ function compareByDate(left, right) {
 
 function compareVersion(version1, version2)
 {
-    var diff = parseInt(replaceAll(version1, '.', '')) - parseInt(replaceAll(version1, '.', ''));
+    var diff = parseInt(replaceAll(version1, '.', '')) - parseInt(replaceAll(version2, '.', ''));
     return  diff < 0 ? -1 : diff > 0 ? 1 : 0;
 }
 
