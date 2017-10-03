@@ -4,7 +4,7 @@
 // @author      GeneralAnasazi
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
-// @version 3.3.0.9
+// @version 3.3.0.10
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
@@ -22,7 +22,7 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to set after a renew
-const VERSION_SCRIPT = '3.3.0.9';
+const VERSION_SCRIPT = '3.3.0.10';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.3.0.8';
 
@@ -657,7 +657,7 @@ function TotalRessources()  {
     this.calcReports = function(reportList, date) {
         for (var i = 0; i < reportList.length; i++)
         {
-            if (reportList[i].info.date > date && reportList[i].ressources && reportList[i].attackerName == playerName)
+            if (reportList[i].info.date > date && reportList[i].ressources)
             {
                 if (reportList[i].ressources.metal && !Number.isNaN(reportList[i].ressources.metal))
                     this.ressources.metal += reportList[i].ressources.metal;
@@ -689,7 +689,7 @@ function TotalRessources()  {
         {
             if ((inactivePlayers[this.combatReports[i].defenderName] != 'i' || inactivePlayers == {}) &&
                 // exclude attacks of your self and attacks from
-                this.combatReports[i].defenderName != playerName && this.combatReports[i].attackerName == playerName &&
+                this.combatReports[i].defenderName != playerName &&
                 this.combatReports[i].defenderName != 'Unknown') // exclude Spy Attacks and total destroyed in the first round
             {
                 if (this.combatReports[i].info.date >= bashTimespan)
@@ -1241,46 +1241,50 @@ function onLoadPage()
     var result = false;
     if(/page=message/.test(location.href))
     {
-        var msgList = document.getElementsByClassName('msg');
-        if (msgList[0])
+        var fleetsDiv = document.getElementById('fleetsTab');
+        if (fleetsDiv)
         {
-            var combatReportAdded = false;
-            for (var i = 0; i < msgList.length; i++)
+            var msgList = fleetsDiv.getElementsByClassName('msg');
+            if (msgList[0])
             {
-                // is a combat report page loaded
-                if (msgList[i].getElementsByClassName('combatLeftSide')[0])
+                var combatReportAdded = false;
+                for (var i = 0; i < msgList.length; i++)
                 {
-                    var combatReport = new CombatReport(msgList[i]);
-                    if (combatReport.attackerName != 'Unknown')
+                    // is a combat report page loaded
+                    if (msgList[i].getElementsByClassName('combatLeftSide')[0])
                     {
-                        combatReportAdded = combatReportAdded || totalRess.append(combatReport);
+                        var combatReport = new CombatReport(msgList[i]);
+                        if (combatReport.attackerName != 'Unknown')
+                        {
+                            combatReportAdded = combatReportAdded || totalRess.append(combatReport);
+                        }
+                    }
+                    else // look for other reports
+                    {
+                        var apiKey = msgList[i].getAttribute('data-api-key');
+                        if (apiKey && apiKey.startsWith('sr-'))
+                        {
+                            readSpyReport(msgList[i]);
+                        }
+                        if (msgList[i].getElementsByClassName('planetIcon tf')[0])
+                        {
+                            var collReport = new CollectingReport(msgList[i]);
+                            if (collReport.ressources)
+                                combatReportAdded = combatReportAdded || totalRess.append(collReport);
+                        }
                     }
                 }
-                else // look for other reports
+                if (combatReportAdded)
+                    checkRaidFinished();
+                if (inactivePlayers && totalRess.inactivePlayersLength != Object.keys(inactivePlayers).length)
                 {
-                    var apiKey = msgList[i].getAttribute('data-api-key');
-                    if (apiKey && apiKey.startsWith('sr-'))
-                    {
-                        readSpyReport(msgList[i]);
-                    }
-                    if (msgList[i].getElementsByClassName('planetIcon tf')[0])
-                    {
-                        var collReport = new CollectingReport(msgList[i]);
-                        if (collReport.ressources)
-                            combatReportAdded = combatReportAdded || totalRess.append(collReport);
-                    }
+                    totalRess.inactivePlayersLength = Object.keys(inactivePlayers).length;
+                    writeToLocalStorage(inactivePlayers, "InactivePlayers");
+                    totalRess.save();
+                    log('write inactive players');
                 }
+                result = true;
             }
-            if (combatReportAdded)
-                checkRaidFinished();
-            if (inactivePlayers && totalRess.inactivePlayersLength != Object.keys(inactivePlayers).length)
-            {
-                totalRess.inactivePlayersLength = Object.keys(inactivePlayers).length;
-                writeToLocalStorage(inactivePlayers, "InactivePlayers");
-                totalRess.save();
-                log('write inactive players');
-            }
-            result = true;
         }
     }
     return result;
