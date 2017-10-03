@@ -4,7 +4,7 @@
 // @author      GeneralAnasazi
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
-// @version 3.3.0.10
+// @version 3.3.0.11
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
@@ -22,9 +22,9 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to set after a renew
-const VERSION_SCRIPT = '3.3.0.10';
+const VERSION_SCRIPT = '3.3.0.11';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
-const VERSION_SCRIPT_RESET = '3.3.0.8';
+const VERSION_SCRIPT_RESET = '3.3.0.11';
 
 // debug consts
 const DEBUG = false; // set it to true enable debug messages -> log(msg)
