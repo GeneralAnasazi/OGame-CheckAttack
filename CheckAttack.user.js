@@ -4,7 +4,7 @@
 // @author      GeneralAnasazi
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
-// @version 3.3.0.8
+// @version 3.3.0.9
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
@@ -22,7 +22,7 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to set after a renew
-const VERSION_SCRIPT = '3.3.0.8';
+const VERSION_SCRIPT = '3.3.0.9';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.3.0.8';
 
@@ -511,8 +511,7 @@ function ReportInfo(msg) {
     this.readMoon = function(msg) {
         // get isPlanet or isMoon
         var result = false;
-        var figure = msg.getElementsByClassName('planetIcon moon')[0];
-        if (figure)
+        if (msg.getElementsByClassName('planetIcon moon')[0])
             result = true;
         return result;
     };
@@ -658,7 +657,7 @@ function TotalRessources()  {
     this.calcReports = function(reportList, date) {
         for (var i = 0; i < reportList.length; i++)
         {
-            if ((reportList[i].info.date > date && reportList[i].ressources))
+            if (reportList[i].info.date > date && reportList[i].ressources && reportList[i].attackerName == playerName)
             {
                 if (reportList[i].ressources.metal && !Number.isNaN(reportList[i].ressources.metal))
                     this.ressources.metal += reportList[i].ressources.metal;
@@ -690,7 +689,7 @@ function TotalRessources()  {
         {
             if ((inactivePlayers[this.combatReports[i].defenderName] != 'i' || inactivePlayers == {}) &&
                 // exclude attacks of your self and attacks from
-                this.combatReports[i].defenderName != playerName &&
+                this.combatReports[i].defenderName != playerName && this.combatReports[i].attackerName == playerName &&
                 this.combatReports[i].defenderName != 'Unknown') // exclude Spy Attacks and total destroyed in the first round
             {
                 if (this.combatReports[i].info.date >= bashTimespan)
@@ -940,8 +939,19 @@ function display() {
         info.innerHTML=htmlCount;
 
         replaceElement(LINKS_TOOLBAR_BUTTONS_ID, DIV_STATUS_ID, info);
+
+        // insert a Div as a placeholder to increase the scrollbar range, if needed
         var rect = info.getBoundingClientRect();
-        //TODO: Scrollbar anpassen
+        var contentDiv = document.getElementById('contentWrapper');
+        var toolBar = document.getElementById('links');
+        if (contentDiv && toolBar && toolBar.clientHeight > contentDiv.clientHeight)
+        {
+            var divHeight = rect.bottom - contentDiv.clientHeight;
+            var placeholder = createDiv('checkAttackPlaceholder');
+            placeholder.style.width = '100px';
+            placeholder.style.height = toolBar.clientHeight + 'px';
+            contentDiv.appendChild(placeholder);
+        }
     }
     catch (ex)
     {
@@ -1439,7 +1449,7 @@ function startScript()
         if (settings.isNewVersion())
         {
             log('New Version detected!');
-            if (compareVersion(settings.lastVersion, VERSION_SCRIPT_RESET) <= 0)
+            if (compareVersion(settings.lastVersion, VERSION_SCRIPT_RESET) <= 0 && false) // no reset
             {
                 resetCookies();
             }
