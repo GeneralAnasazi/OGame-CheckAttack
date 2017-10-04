@@ -9,6 +9,7 @@
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
+// @grant       GM_xmlhttpRequest
 // @require     http://ajax.googleapis.com/ajax/libs/jquery/2.1.0/jquery.min.js
 
 // ==/UserScript==
@@ -1157,7 +1158,7 @@ function getMessageAsync() {
                                     setStatus(loadStatusCR);
                                     break;
                             }
-                            if (result == 1) // load the other pages recursiv
+                            if (result == 1 && asyncHelper.currentPage <= asyncHelper.maxPage) // load the other pages recursiv
                             {
                                 if (asyncHelper.currentPage <= asyncHelper.maxPage)
                                     getMessageAsync();
@@ -1444,7 +1445,7 @@ function resetCookies()
 {
     // resetCookies is only for debug operations or to transfor old date format to the new one
     log('reset cookies');
-    if (!RESET_COOKIES)
+    if (!RESET_COOKIES || true)
     {
         settings.lastCheckSpyReport = getBashTimespan();
         deleteValueLocalStorage('InactivePlayers');
