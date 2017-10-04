@@ -4,10 +4,12 @@
 // @author      GeneralAnasazi
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
-// @version 3.3.0.13
+// @include about:addons
+// @version 3.3.0.14
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
+// @require     http://ajax.googleapis.com/ajax/libs/jquery/2.1.0/jquery.min.js
 
 // ==/UserScript==
 
@@ -22,7 +24,7 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to set after a renew
-const VERSION_SCRIPT = '3.3.0.13';
+const VERSION_SCRIPT = '3.3.0.14';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.3.0.12';
 
@@ -1112,76 +1114,87 @@ function getMaxPage()
 function getMessageAsync() {
     if (asyncHelper.started())
     {
-        return $.ajax({
-            type:     'POST',
-            url:      '/game/index.php?page=messages',
-            data:     'messageId=-1&tabid='+asyncHelper.tabId+'&action=107&pagination='+asyncHelper.currentPage+'&ajax=1',
-            dataType: 'html',
-            context:  document.body,
-            global:   false,
-            async:    true,
-            error:    function(jqXHR, exception) {
-                console.log(jqXHR);
-                console.log(exception);
-                setStatus('Error: ' + exception);
-            },
-            success:  function(data) {
-                var result = -1;
-                try
-                {
-                    var div = document.getElementById("verificationAttaque");
-                    if (div)
-                    {
-                        div.innerHTML = data;
-                        if (asyncHelper.currentPage == 1)
-                            asyncHelper.maxPage = getMaxPage();
 
-                        switch (asyncHelper.tabId)
+        try
+        {
+            //var $ = unsafeWindow.jQuery;
+            return this.$.ajax({
+                type:     'POST',
+                url:      '/game/index.php?page=messages',
+                data:     'messageId=-1&tabid='+asyncHelper.tabId+'&action=107&pagination='+asyncHelper.currentPage+'&ajax=1',
+                dataType: 'html',
+                context:  document.body,
+                global:   false,
+                async:    true,
+                error:    function(jqXHR, exception) {
+                    log('Error on getMessageAsync');
+                    console.log(jqXHR);
+                    console.log(exception);
+                    setStatus('Error: ' + exception);
+                },
+                success:  function(data) {
+                    var result = -1;
+                    try
+                    {
+                        log('result loaded -> execute data');
+                        var div = document.getElementById("verificationAttaque");
+                        if (div)
                         {
-                            case TABID_SPY_REPORT:
-                                result = readSpyReports(asyncHelper.currentPage) ? 1 : 0;
-                                asyncHelper.currentPage++;
-                                setStatus(loadStatusSR);
-                                break;
-                            case TABID_COMBAT_REPORT:
-                                result = readCombatReports(asyncHelper.currentPage) ? 1 : 0;
-                                asyncHelper.currentPage++;
-                                setStatus(loadStatusCR);
-                                break;
-                        }
-                        if (result == 1) // load the other pages recursiv
-                        {
-                            if (asyncHelper.currentPage <= asyncHelper.maxPage)
-                                getMessageAsync();
-                        }
-                        else if (result === 0 || asyncHelper.currentPage > asyncHelper.maxPage)
-                        {
+                            div.innerHTML = data;
+                            if (asyncHelper.currentPage == 1)
+                                asyncHelper.maxPage = getMaxPage();
+
                             switch (asyncHelper.tabId)
                             {
                                 case TABID_SPY_REPORT:
-                                    writeToLocalStorage(inactivePlayers, "InactivePlayers");
-                                    asyncHelper.clearAsync();
-                                    asyncHelper.startAsync(TABID_COMBAT_REPORT);
-                                    getMessageAsync();
+                                    result = readSpyReports(asyncHelper.currentPage) ? 1 : 0;
+                                    asyncHelper.currentPage++;
+                                    setStatus(loadStatusSR);
                                     break;
                                 case TABID_COMBAT_REPORT:
-                                    asyncHelper.clearAsync();
-                                    checkRaidFinished();
+                                    result = readCombatReports(asyncHelper.currentPage) ? 1 : 0;
+                                    asyncHelper.currentPage++;
+                                    setStatus(loadStatusCR);
                                     break;
                             }
+                            if (result == 1) // load the other pages recursiv
+                            {
+                                if (asyncHelper.currentPage <= asyncHelper.maxPage)
+                                    getMessageAsync();
+                            }
+                            else if (result === 0 || asyncHelper.currentPage > asyncHelper.maxPage)
+                            {
+                                switch (asyncHelper.tabId)
+                                {
+                                    case TABID_SPY_REPORT:
+                                        writeToLocalStorage(inactivePlayers, "InactivePlayers");
+                                        asyncHelper.clearAsync();
+                                        asyncHelper.startAsync(TABID_COMBAT_REPORT);
+                                        getMessageAsync();
+                                        break;
+                                    case TABID_COMBAT_REPORT:
+                                        asyncHelper.clearAsync();
+                                        checkRaidFinished();
+                                        break;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            console.log('div "verificationAttaque" not found');
                         }
                     }
-                    else
+                    catch(ex)
                     {
-                        console.log('div "verificationAttaque" not found');
+                        console.log(ex);
                     }
                 }
-                catch(ex)
-                {
-                    console.log(ex);
-                }
-            }
-        });
+            });
+        }
+        catch (ex)
+        {
+            console.log(ex);
+        }
     }
 }
 
@@ -1258,6 +1271,7 @@ function loadInfo()
     asyncHelper.startAsync(TABID_SPY_REPORT); // set the start values for the async process
 
     // start search for inactive players -> async
+    log('start getMessage');
     getMessageAsync();
 }
 
