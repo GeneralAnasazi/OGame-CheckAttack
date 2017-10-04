@@ -1475,7 +1475,6 @@ function startScript()
         localeSettings.load();
         translate();
         settings.load();
-        settings.lastVersion = '3.3.0.12';
         if (settings.isNewVersion())
         {
             log('New Version detected!');
