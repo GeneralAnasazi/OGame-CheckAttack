@@ -4,7 +4,7 @@
 // @author      GeneralAnasazi
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
-// @version 3.3.0.12
+// @version 3.3.0.13
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
@@ -22,7 +22,7 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to set after a renew
-const VERSION_SCRIPT = '3.3.0.12';
+const VERSION_SCRIPT = '3.3.0.13';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.3.0.12';
 
@@ -639,18 +639,29 @@ function TotalRessources()  {
     };
     this.calc = function(date) {
         var result = false;
-        if (!date)
-            date = getBashTimespan();
-        if (this.lastCalcLength != this.combatReports.length || this.lastCollectingLength != this.collectingReports.length)
+        log('start calculate');
+        log(this);
+        try
         {
-            this.lastCalcLength = this.combatReports.length;
-            this.lastCollectingLength = this.collectingReports.length;
-            this.ressources.clear();
-            this.sortByDateDesc();
-            log(this.combatReports);
-            this.calcReports(this.combatReports, date);
-            this.calcReports(this.collectingReports, date);
-            result = true;
+            if (!date)
+                date = getBashTimespan();
+            if (this.lastCalcLength != this.combatReports.length || this.lastCollectingLength != this.collectingReports.length)
+            {
+                this.lastCalcLength = this.combatReports.length;
+                this.lastCollectingLength = this.collectingReports.length;
+                this.ressources.clear();
+                log('calc start sort');
+                this.sortByDateDesc();
+                log('calc cr reports');
+                this.calcReports(this.combatReports, date);
+                log('calc tf reports');
+                this.calcReports(this.collectingReports, date);
+                result = true;
+            }
+        }
+        catch (ex)
+        {
+            console.log('Error on calc TotalRessources: ' + ex);
         }
         return result;
     };
@@ -801,9 +812,23 @@ function coordToUrl(coord)
 
 function checkRaidFinished()
 {
-    if (totalRess.calc(getBashTimespan()))
+    log('loading finished');
+    try
     {
-        totalRess.save();
+        if (totalRess.calc())
+        {
+            log('claculated');
+            totalRess.save();
+            log('display');
+            display();
+        }
+    }
+    catch (ex)
+    {
+        console.log(ex);
+    }
+    finally
+    {
         display();
     }
 }
@@ -1450,10 +1475,12 @@ function startScript()
         localeSettings.load();
         translate();
         settings.load();
+        settings.lastVersion = '3.3.0.12';
         if (settings.isNewVersion())
         {
             log('New Version detected!');
-            if (compareVersion(settings.lastVersion, VERSION_SCRIPT_RESET) <= 0) // no reset
+            var comp = compareVersion(VERSION_SCRIPT, VERSION_SCRIPT_RESET);
+            if (comp <= 0) // no reset
             {
                 resetCookies();
             }
