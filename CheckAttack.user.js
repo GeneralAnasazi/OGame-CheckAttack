@@ -14,7 +14,6 @@
 
 // ==/UserScript==
 
-// test branch
 // constants
 const COOKIE_EXPIRES_DAYS = 1;
 const ERROR = 'Error';
