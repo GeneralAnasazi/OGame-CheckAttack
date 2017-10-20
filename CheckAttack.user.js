@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.3.0.15
+// @version 3.3.0.16
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
@@ -14,7 +14,7 @@
 
 // ==/UserScript==
 
-// constants
+/***** CONSTANTS *************************************************************/
 const COOKIE_EXPIRES_DAYS = 1;
 const ERROR = 'Error';
 const TABID_SPY_REPORT = 20;
@@ -25,7 +25,7 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to set after a renew
-const VERSION_SCRIPT = '3.3.0.15';
+const VERSION_SCRIPT = '3.3.0.16';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.3.0.12';
 
@@ -34,12 +34,15 @@ const DEBUG = true; // set it to true enable debug messages -> log(msg)
 const RESET_COOKIES = false;
 
 
-// **************************************************************************
+/***** Global Vars ***********************************************************/
 var test = false;
 
 // globale vars
+var calculateRess = false;
 var language = document.getElementsByName('ogame-language')[0].content;
 var playerName = document.getElementsByName('ogame-player-name')[0].content;
+var sendFleetList = new SendFleetList();
+var sendFleetPage = -1;
 var spyReports = new SpyReportList();
 var totalRess = new TotalRessources();
 
@@ -52,8 +55,39 @@ var title1 = "Pas de risque";
 var title2 = "de bash";
 var title3 = "Risque de bash";
 
+/***** ENUMERATIONS ***********************************************************/
 
-// *** Objects **************************************************************
+    var missionState = {
+        EXPEDITION: 0,
+        COLONIZE: 1,
+        RECYCLE: 2,
+        TRANSPORT: 3,
+        STATIONARY: 4,
+        ESPIONAGE: 5,
+        HOLD: 6,
+        ATTACK: 7,
+        ALLIANCE_ATTACK: 8,
+        DESTROY_MOON: 9
+    };
+
+    var unitIds = {
+        LITLE_TRANSPORTER: 202,
+        BIG_TRANSPORTER: 203,
+        LIGHT_HUNTER: 204,
+        HEAVY_HUNTER: 205,
+        CRUISER: 206,
+        BATTLESHIP: 207,
+        COLONIZESHIP: 208,
+        RECYCLER: 209,
+        ESPIONAGE_PROBE: 210,
+        BOMBER: 211,
+        DESTROYER: 213,
+        DEATHSTAR: 214,
+        BATTLECRUISER: 215
+    };
+
+
+/***** Objects ***************************************************************/
 
 // async object
 var asyncHelper = {
@@ -214,6 +248,22 @@ var settings = {
         writeToLocalStorage(this, 'Settings');
     }
 }; // cookie tabSettings
+
+var unitCosts = {};
+unitCosts[unitIds.LITLE_TRANSPORTER] = {metal: 2000, crystal: 2000, deuterium: 0};
+unitCosts[unitIds.BIG_TRANSPORTER] = {metal: 6000, crystal: 6000, deuterium: 0};
+unitCosts[unitIds.LIGHT_HUNTER] = {metal: 3000, crystal: 1000, deuterium: 0};
+unitCosts[unitIds.HEAVY_HUNTER] = {metal: 6000, crystal: 4000, deuterium: 0};
+unitCosts[unitIds.CRUISER] = {metal: 20000, crystal: 7000, deuterium: 2000};
+unitCosts[unitIds.BATTLESHIP] = {metal: 45000, crystal: 15000, deuterium: 0};
+unitCosts[unitIds.COLONIZESHIP] = {metal: 10000, crystal: 20000, deuterium: 10000};
+unitCosts[unitIds.RECYCLER] = {metal: 10000, crystal: 6000, deuterium: 2000};
+unitCosts[unitIds.ESPIONAGE_PROBE] = {metal: 2000, crystal: 2000, deuterium: 0};
+unitCosts[unitIds.BOMBER] = {metal: 50000, crystal: 25000, deuterium: 15000};
+unitCosts[unitIds.DESTROYER] = {metal: 60000, crystal: 50000, deuterium: 15000};
+unitCosts[unitIds.DEATHSTAR] = {metal: 5000000, crystal: 4000000, deuterium: 1000000};
+unitCosts[unitIds.BATTLECRUISER] = {metal: 30000, crystal: 40000, deuterium: 15000};
+
 
 /***** CONSTRUCTORS ***********************************************************/
 
@@ -569,6 +619,16 @@ function Ressources(span) {
     this.crystal = 0;
     this.deuterium = 0;
     this.total = 0;
+
+    this.add = function(ress, multiplier) {
+        log(ress); log(multiplier);
+        if (!multiplier)
+            multiplier = 1;
+        this.metal += ress.metal * multiplier;
+        this.crystal += ress.crystal * multiplier;
+        this.deuterium += ress.deuterium * multiplier;
+        //this.total += ress.total;
+    };
     this.clear = function() {
         this.metal = 0;
         this.crystal = 0;
@@ -600,10 +660,13 @@ function Ressources(span) {
         }
     };
     this.setValues = function(obj) {
-        this.metal = obj.metal;
-        this.crystal = obj.crystal;
-        this.deuterium = obj.deuterium;
-        this.total = obj.total;
+        if (obj)
+        {
+            this.metal = obj.metal;
+            this.crystal = obj.crystal;
+            this.deuterium = obj.deuterium;
+            this.total = obj.total;
+        }
     };
     this.toHtml = function(title, className) {
         var result = '';
@@ -624,6 +687,189 @@ function Ressources(span) {
     };
 
     this.load(span);
+}
+
+function SendFleet(storageKey) {
+    this.deuterium = null;
+    this.infoFrom = null; // reportInfo
+    this.infoTo = null; // reportInfo
+    this.mission = null; // missionState
+    this.page = null;
+    this.ships = {};
+    this.storageKey = null;
+
+    this.delete = function() {
+        deleteValueLocalStorage(this.storageKey);
+    };
+    this.parse = function(page) {
+        //on send ships read all the data to know what is sended
+        try
+        {
+            this.page = page;
+            switch (page)
+            {
+                case 1:
+                    this.parseShips();
+                    break;
+                case 3:
+                    this.parseMission();
+                    break;
+            }
+        }
+        catch (ex)
+        {
+            alert(ex);
+        }
+    };
+    this.parseMission = function() {
+        var ul = document.getElementById("missions");
+        if (ul)
+        {
+            var li = ul.getElementsByClassName("on")[0];
+            if (li)
+            {
+                var attr = li.getAttribute("id");
+                switch(attr)
+                {
+                    case "button15":
+                        this.mission = missionState.EXPEDITION;
+                        break;
+                    case "button7":
+                        this.mission = missionState.COLONIZE;
+                        break;
+                    case "button8":
+                        this.mission = missionState.RECYCLE;
+                        break;
+                    case "button3":
+                        this.mission = missionState.TRANSPORT;
+                        break;
+                    case "button4":
+                        this.mission = missionState.STATIONARY;
+                        break;
+                    case "button6":
+                        this.mission = missionState.ESPIONAGE;
+                        break;
+                    case "button5":
+                        this.mission = missionState.HOLD;
+                        break;
+                    case "button1":
+                        this.mission = missionState.ATTACK;
+                        break;
+                    case "button2":
+                        this.mission = missionState.ALLIANCE_ATTACK;
+                        break;
+                    case "button9":
+                        this.mission = missionState.DESTROY_MOON;
+                        break;
+                }
+            }
+        }
+        var divWrap = document.getElementById("wrap");
+        if (divWrap)
+        {
+            var consumption = document.getElementById("consumption").getElementsByTagName("span")[0];
+            if (consumption && consumption.textContent)
+            {
+                this.deuterium = extractRess(consumption.textContent.split(" ")[0]);
+            }
+            this.parseReportInfo(divWrap);
+        }
+    };
+    this.parseReportInfo = function(div) {
+        var inputList = div.getElementsByClassName("value");
+        if(inputList.length > 0)
+        {
+            this.infoTo = new ReportInfo();
+            this.infoTo.coord = "[" + inputList[0].textContent.split('[')[1].split(']')[0] + "]";
+            this.infoTo.readMoon(inputList[0]);
+            var arrivalTime = parseInt(document.getElementById("aks").getAttribute("data-arrival-time"));
+            this.infoTo.date = new Date(arrivalTime);
+        }
+    };
+    this.parseShips = function() {
+        this.parseShipValues("military");
+        this.parseShipValues("civil");
+    };
+    this.parseShipValues = function(divId) {
+        var div = document.getElementById(divId);
+        if (div)
+        {
+            var inputList = div.getElementsByClassName("fleetValues");
+            for (var i = 0; i < inputList.length; i++)
+            {
+                var shipId = parseInt(inputList[i].getAttribute("id").split('_')[1]);
+                this.ships[shipId] = parseInt(inputList[i].value);
+            }
+        }
+    };
+    this.read = function() {
+        var obj = loadFromLocalStorage(this.storageKey);
+        if (obj)
+        {
+            this.setValues(obj);
+        }
+    };
+    this.setValues = function(obj) {
+        this.deuterium = obj.deuterium;
+        if (obj.infoFrom)
+        {
+            this.infoFrom = new ReportInfo();
+            this.infoFrom.setValues(obj.infoFrom);
+        }
+        if (obj.infoTo)
+        {
+            this.infoTo = new ReportInfo();
+            this.infoTo.setValues(obj.infoTo);
+        }
+        this.mission = obj.mission;
+        this.page = obj.page;
+        this.ships = obj.ships;
+        this.storageKey = obj.storageKey;
+    };
+    this.write = function() {
+        writeToLocalStorage(this, this.storageKey);
+    };
+
+    if (storageKey)
+    {
+        this.storageKey = storageKey;
+        this.read();
+    }
+}
+
+function SendFleetList() {
+    this.sendFleets = [];
+
+    this.add = function(sendFleet) {
+        this.sendFleets.push(sendFleet);
+    };
+    this.getSendFleetFromReport = function(report) {
+        var result = null;
+        var startDate = report.info.date.getTime() - 5000;
+        var endDate = report.info.date.getTime() + 5000;
+        var idx = this.sendFleets.findIndex(el => el.infoTo.date.getTime() > startDate && el.infoTo.date.getTime() < endDate);
+        if (idx > -1)
+            result = this.sendFleets[idx];
+        return result;
+    };
+    this.read = function() {
+        var obj = loadFromLocalStorage('SendFleetList');
+        if (obj)
+        {
+            for (var i = 0; i < obj.sendFleets.length; i++)
+            {
+                var sendFleet = new SendFleet();
+                sendFleet.setValues(obj.sendFleets[i]);
+                this.sendFleets.push(sendFleet);
+            }
+        }
+        log(this);
+    };
+    this.setValues = function(obj) {
+    };
+    this.write = function() {
+        //writeToLocalStorage(this, 'SendFleetList');
+    };
 }
 
 function SpyReport(msg) {
@@ -680,6 +926,9 @@ function SpyReportList() {
         return result;
     };
     this.count = function() { return this.reports.length; };
+    this.deleteOldReports = function() {
+        deleteOldReports(this.reports, getBashTimespan());
+    };
     // returns the state of the report (-1 = nothing found; 0 = inactive player; 1 = spyAttack; 99 = bash attack)
     this.getStatus = function(report) {
         var result = -1;
@@ -720,8 +969,8 @@ function SpyReportList() {
         };
     this.save = function() {
         this.sortByDateDesc();
+        this.deleteOldReports();
         writeToLocalStorage(this, 'SpyReports');
-        log(this);
         this.updated = false;
     };
     this.sortByDateDesc = function() {
@@ -729,7 +978,7 @@ function SpyReportList() {
     };}
 }
 
-function TotalRessources()  {
+function TotalRessources() {
     this.collectingReports = [];
     this.combatReports = [];
 
@@ -739,7 +988,9 @@ function TotalRessources()  {
     this.lastCombatReport = getBashTimespan();
     this.loadDetailsCount = -1;
     this.loading = false;
-    this.ressources = new Ressources();
+    this.ressources = new Ressources(); // Raid Ressources
+    this.lostRessources = new Ressources();
+    this.totalRessources = new Ressources();
 
     /*** METHODS *********************/ {
         this.add = function(report) {
@@ -789,20 +1040,79 @@ function TotalRessources()  {
             {
                 if (!date)
                     date = getBashTimespan();
-                if (this.lastCalcLength != this.combatReports.length || this.lastCollectingLength != this.collectingReports.length)
+                if (this.lastCalcLength != this.combatReports.length || this.lastCollectingLength != this.collectingReports.length || calculateRess)
                 {
                     this.lastCalcLength = this.combatReports.length;
                     this.lastCollectingLength = this.collectingReports.length;
                     this.ressources.clear();
+                    this.lostRessources.clear();
                     this.sortByDateDesc();
                     this.calcReports(this.combatReports, date);
                     this.calcReports(this.collectingReports, date);
+                    this.calcTotal();
                     result = true;
                 }
             }
             catch (ex)
             {
                 console.log('Error on calc TotalRessources: ' + ex);
+            }
+            return result;
+        };
+        this.calcLosses = function(units, isDefender) {
+            var result = new Ressources();
+            for (var id in units)
+            {
+                if (unitCosts[id])
+                {
+                    result.add(unitCosts[id], parseInt(units[id]));
+                }
+                if (isDefender) // calc deff lost without repaired deff
+                {
+                    //- details.repairedDefense
+                }
+            }
+            return result;
+        };
+        this.calcLost = function(details) {
+            var result = new Ressources();
+            if (details)
+            {
+                var fleetId = -1;
+                var isDefender = false;
+                for (var id in details.attacker)
+                {
+                    if (details.attacker[id].ownerName == playerName)
+                    {
+                        fleetId = parseInt(details.attacker[id].fleetID);
+                    }
+                }
+                if (fleetId == -1)
+                {
+                    for (var defenderId in details.defender)
+                    {
+                        var defender = details.defender[defenderId];
+                        if (defender.ownerName == playerName)
+                        {
+                            fleetId = parseInt(defender.fleetID);
+                            isDefender = true;
+                        }
+                    }
+                }
+                if (fleetId > -1)
+                {
+                    var idx = details.combatRounds.length - 1;
+                    var losses = details.combatRounds[idx].attackerLosses;
+                    if (isDefender)
+                        losses = details.combatRounds[idx].defenderLosses;
+                    for (var units in losses)
+                    {
+                        var ress = this.calcLosses(losses[units], isDefender);
+                        result.add(ress);
+                    }
+                }
+                else
+                    log("Fleet ID not found");
             }
             return result;
         };
@@ -819,12 +1129,26 @@ function TotalRessources()  {
                         this.ressources.deuterium += reportList[i].ressources.deuterium;
                     if (reportList[i].ressources.total && !Number.isNaN(reportList[i].ressources.total))
                         this.ressources.total += reportList[i].ressources.total;
+
+                    this.lostRessources.add(this.calcLost(reportList[i].details));
                 }
             }
+        };
+        this.calcTotal = function() {
+            this.totalRessources.clear();
+            this.totalRessources.metal = this.ressources.metal - this.lostRessources.metal;
+            this.totalRessources.crystal = this.ressources.crystal - this.lostRessources.crystal;
+            this.totalRessources.deuterium = this.ressources.deuterium - this.lostRessources.deuterium;
         };
         this.clear = function() {
             this.combatReports = [];
             this.ressources.clear();
+        };
+        this.deleteOldReports = function() {
+            var date = new Date();
+            date = new Date(date.getDate() - 3);
+            deleteOldReports(this.combatReports, date);
+            deleteOldReports(this.collectingReports, date);
         };
         this.getAttacks = function() {
             var result = new AttackTracker();
@@ -868,6 +1192,7 @@ function TotalRessources()  {
                 }
                 // Ressources
                 this.ressources.setValues(obj.ressources);
+                this.lostRessources.setValues(obj.lostRessources);
                 this.lastCombatReport = new Date(obj.lastCombatReport);
                 this.inactivePlayersLength = obj.inactivePlayersLength;
                 this.lastCalcLength = obj.lastCalcLength;
@@ -879,6 +1204,8 @@ function TotalRessources()  {
             log('save total ress');
             this.lastCalcLength = this.combatReports.length;
             this.lastCollectingLength = this.collectingReports.length;
+            this.sortByDateDesc();
+            this.deleteOldReports();
             writeToLocalStorage(this, 'TotalRaidRessources');
             ressourceTitles.write();
         };
@@ -886,11 +1213,16 @@ function TotalRessources()  {
             this.combatReports.sort(compareByDate);
             this.collectingReports.sort(compareByDate);
         };
-        this.toHtml = function(title, className) {
-            if (this.ressources.metal)
-                return this.ressources.toHtml(title, className);
-            else
-                return '';
+        this.toHtml = function(title, className, type) {
+            switch (type)
+            {
+                case "RaidRessources":
+                    return this.ressources.toHtml(title, className);
+                case "LostRessources":
+                    return this.lostRessources.toHtml(title, className);
+                case "Total":
+                    return this.totalRessources.toHtml(title, className);
+            }
         };
     }
 }
@@ -908,6 +1240,9 @@ function translate()
             break;
         case 'en':
             setTranslationVars('Way to risk', 'to bash', 'Risk to bash', 'attack', 'attacks');
+            break;
+        case 'fr':
+            setTranslationVars('Pas de risque', 'de bash', 'Risque de bash', 'attaque', 'attaques');
             break;
         default:
             setTranslationVars('Way to risk', 'to bash', 'Risk to bash', 'attack', 'attacks');
@@ -940,11 +1275,64 @@ function addCssLink(url)
     document.getElementsByTagName('head')[0].appendChild(link);
 }
 
+function addEventSendFleet(fleetPage)
+{
+    var elementId = "continue";
+    if (fleetPage == 3)
+        elementId = "start";
+
+    var sendFleetButton = document.getElementById(elementId);
+    if (sendFleetButton)
+    {
+        sendFleetButton.addEventListener("click", checkAttackSendShips, false);
+        sendFleetPage = fleetPage;
+    }
+}
+
+function addEventListenersToPage()
+{
+    if(/page=fleet3/.test(location.href))
+        addEventSendFleet(3);
+    else if(/page=fleet2/.test(location.href))
+        addEventSendFleet(2);
+    else if(/page=fleet1/.test(location.href))
+        addEventSendFleet(1);
+    else
+        sendFleetPage = -1;
+}
+
 function coordToUrl(coord)
 {
 	 var coordClean = coord.substring(1, coord.length-1);
 	 var coordTab = coordClean.split(":");
 	 return '/game/index.php?page=galaxy&galaxy='+coordTab[0]+'&system='+coordTab[1]+'&position='+coordTab[2] ;
+}
+
+function checkAttackSendShips()
+{
+    //on send ships read all the data to know what is sended
+    var sendFleet;
+    if (sendFleetPage == 1)
+    {
+        sendFleet = new SendFleet();
+        sendFleet.storageKey = 'SendFleetMemory';
+    }
+    else if (sendFleetPage > 1)
+        sendFleet = new SendFleet('SendFleetMemory');
+    else
+        return;
+    sendFleet.parse(sendFleetPage);
+    if (sendFleetPage > -1)
+    {
+        if (sendFleetPage < 3)
+            sendFleet.write();
+        else
+        {
+            sendFleet.storageKey = null;
+            sendFleetList.add(sendFleet);
+            sendFleetList.write();
+        }
+    }
 }
 
 function checkRaidFinished()
@@ -1012,6 +1400,23 @@ function createSpanStatus(msg)
     if (msg.includes(ERROR))
         span.style.color = 'red';
     return span;
+}
+
+function deleteOldReports(reportList, lastDate)
+{
+    var i = reportList.length - 1;
+    while (i > 0)
+    {
+        if (reportList[i].info && reportList[i].info.date < lastDate)
+        {
+            reportList.splice(i, 1);
+            i--;
+        }
+        else
+        {
+            break;
+        }
+    }
 }
 
 function deleteValueLocalStorage(key)
@@ -1092,7 +1497,9 @@ function display() {
         }
 
         htmlCount += '</div>';
-        htmlCount += totalRess.toHtml('Raid-Ressources', 'attackContent');
+        htmlCount += totalRess.toHtml('Raid-Ressources', 'attackContent', 'RaidRessources');
+        htmlCount += totalRess.toHtml('Lost-Ressources', 'attackContent', 'LostRessources');
+        htmlCount += totalRess.toHtml('Total-Ressources', 'attackContent', 'Total');
 
         var info = createDiv(DIV_STATUS_ID, "content-box-s");
         info.style.width = '170px';
@@ -1304,6 +1711,8 @@ function getMessageDetailsAsync(msgId) {
                                     {
                                         var json = firstSplit.split("');")[0];
                                         totalRess.combatReports[idx].details = jQuery.parseJSON(json);
+                                        totalRess.combatReports[idx].details.attackerJSON = null; // parsed and not needed
+                                        totalRess.combatReports[idx].details.defenderJSON = null; // parsed and not needed
                                         log(totalRess.combatReports[idx].details);
                                     }
                                 }
@@ -1388,6 +1797,8 @@ function loadData()
     settings.load();
     versionCheck();
 
+    //sendFleetList.read();
+    deleteValueLocalStorage('SendFleetList');
     spyReports.load();
     totalRess.load();
 
@@ -1423,6 +1834,7 @@ function loadInfo()
     if (asyncHelper.started())
         return;
 
+    calculateRess = true;
     totalRess.loading = true;
     displayLoadingGif();
     asyncHelper.startAsync(TABID_SPY_REPORT); // set the start values for the async process
@@ -1444,19 +1856,19 @@ function onLoadPage()
             totalRess.loading = true;
             try
             {
+                var combatReportAdded = false;
+                var recycleReportAdded = false;
+                var spyReportAdded = false;
                 var msgList = fleetsDiv.getElementsByClassName('msg');
                 if (msgList[0])
                 {
-                    var combatReportAdded = false;
-                    var recycleReportAdded = false;
-                    var spyReportAdded = false;
                     for (var i = 0; i < msgList.length; i++)
                     {
                         // is a combat report page loaded
                         if (msgList[i].getElementsByClassName('combatLeftSide')[0])
                         {
                             var combatReport = new CombatReport(msgList[i]);
-                            var add = totalRess.append(combatReport)
+                            var add = totalRess.append(combatReport);
                             combatReportAdded = combatReportAdded || add;
                         }
                         else // look for other reports
@@ -1622,6 +2034,8 @@ function startScript()
 {
     try
     {
+        addEventListenersToPage();
+
         //addCssLink('https://github.com/GeneralAnasazi/OGame-CheckAttack/blob/master/CheckAttackStyles.css');
         // button for checking
         var btn = document.createElement("a");
@@ -1639,7 +2053,8 @@ function startScript()
         loadData();
         setInterval(onLoadPage, 400);
         display();
-        //getMessageDetailsAsync('11143879');
+
+
     }
     catch(ex)
     {
