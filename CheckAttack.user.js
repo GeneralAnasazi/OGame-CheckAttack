@@ -1193,6 +1193,7 @@ function TotalRessources() {
                 // Ressources
                 this.ressources.setValues(obj.ressources);
                 this.lostRessources.setValues(obj.lostRessources);
+                this.totalRessources.setValues(obj.totalRessources);
                 this.lastCombatReport = new Date(obj.lastCombatReport);
                 this.inactivePlayersLength = obj.inactivePlayersLength;
                 this.lastCalcLength = obj.lastCalcLength;
