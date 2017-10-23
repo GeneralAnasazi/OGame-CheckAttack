@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.3.0.18
+// @version 3.3.0.19
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
@@ -25,9 +25,9 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to set after a renew
-const VERSION_SCRIPT = '3.3.0.18';
+const VERSION_SCRIPT = '3.3.0.19';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
-const VERSION_SCRIPT_RESET = '3.3.0.12';
+const VERSION_SCRIPT_RESET = '3.3.0.19';
 
 // debug consts
 const DEBUG = true; // set it to true enable debug messages -> log(msg)
@@ -452,7 +452,7 @@ function CombatReport(msg) {
                 result = result.split(': ')[1].replace('(', '').replace(')', '');
             }
         }
-        return result;
+        return trim(result);
     };
     this.getDetails = function() {
         if (this.info.id)
@@ -517,7 +517,7 @@ function CombatReport(msg) {
                     if (spanList[0] && spanList.length > 2) //attacker
                     {
                         var arr = spanList[0].innerHTML.split(': ');
-                        this.attackerName = arr[1].replace('(', '').replace(')', '');
+                        this.attackerName = trim(arr[1].replace('(', '').replace(')', ''));
                         this.ressources = new Ressources(spanList[1]);
                         this.debrisField = extractRess(spanList[2].innerHTML);
                     }
@@ -554,11 +554,13 @@ function CombatReport(msg) {
         return result;
     };
     this.setValues = function(obj) {
-        this.attackerName = obj.attackerName;
+		if (obj.attackerName)
+			this.attackerName = trim(obj.attackerName);
         this.debrisField = obj.debrisField;
         if (obj.defenderInactive)
             this.defenderInactive = obj.defenderInactive;
-        this.defenderName = obj.defenderName;
+		if (obj.defenderName)
+	        this.defenderName = trim(obj.defenderName);
         this.details = obj.details;
         this.fleetId = obj.fleetId;
         this.info = new ReportInfo();
@@ -998,21 +1000,22 @@ function SpyReport(msg) {
         if (inactiveSpan)
         {
             //read player name
-            this.playerName = inactiveSpan.textContent;
+            this.playerName = trim(inactiveSpan.textContent);
             this.inactive = true;
         }
         else // active
         {
             var activeSpan = msg.getElementsByClassName('status_abbr_active')[0];
             if (activeSpan)
-                this.playerName = activeSpan.textContent;
+                this.playerName = trim(activeSpan.textContent);
         }
     };
     this.setValues = function(report) {
         this.inactive = report.inactive;
         this.info = new ReportInfo();
         this.info.setValues(report.info);
-        this.playerName = report.playerName;
+		if (report.playerName)
+			this.playerName = trim(report.playerName);
     };}
 
     // read informations from param(s)
