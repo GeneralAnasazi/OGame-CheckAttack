@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.3.0.17
+// @version 3.3.0.18
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
@@ -25,7 +25,7 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to set after a renew
-const VERSION_SCRIPT = '3.3.0.17';
+const VERSION_SCRIPT = '3.3.0.18';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.3.0.12';
 
@@ -59,6 +59,7 @@ var title3 = "Risque de bash";
 
     var bashState = {
         UNDECLARED: -999,
+        OWN_DEFENSE: -4,
         AKS_DEFENSE: -3,
         NOTHING_FOUND: -2,
         NO_DETAILS: -1,
@@ -82,7 +83,6 @@ var title3 = "Risque de bash";
         DESTROY_MOON: 9
     };
 
-//401;3491|402;3480|403;80|404;95|406;18|407;1|408;1|502;28|503;6|
     var unitIds = {
         LITLE_TRANSPORTER: 202,
         BIG_TRANSPORTER: 203,
@@ -108,7 +108,6 @@ var title3 = "Risque de bash";
         INTERCEPTOR_ROCKET: 502,
         INTERPLANETARY_ROCKET: 503
     };
-
 
 /***** Objects ***************************************************************/
 
@@ -271,7 +270,6 @@ var settings = {
         writeToLocalStorage(this, 'Settings');
     }
 }; // cookie tabSettings
-
 
 var unitCosts = {};
 unitCosts[unitIds.LITLE_TRANSPORTER] = {metal: 2000, crystal: 2000, deuterium: 0};
@@ -508,6 +506,8 @@ function CombatReport(msg) {
             {
                 this.info = new ReportInfo(msg);
                 this.defenderName = this.getDefender(msg);
+                if (this.defenderName == playerName)
+                    this.isDefender = true;
 
                 var combatLeftSide = msg.getElementsByClassName('combatLeftSide')[0];
                 if (combatLeftSide && this.defenderName != 'Unknown')
@@ -546,6 +546,10 @@ function CombatReport(msg) {
                     }
                 }
             }
+        }
+        else
+        {
+            result = true;
         }
         return result;
     };
@@ -1040,6 +1044,11 @@ function SpyReportList() {
         var result = bashState.NOTHING_FOUND;
         if (report.defenderName && report.defenderName != 'Unknown' && report.info)
         {
+            if (report.defenderName == playerName)
+            {
+                return bashState.OWN_DEFENSE;
+            }
+
             var idx = this.reports.findIndex(el => el.info.equal(report.info));
             if (idx > -1)
             {
