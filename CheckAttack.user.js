@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.3.0.16
+// @version 3.3.0.17
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
@@ -25,7 +25,7 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to set after a renew
-const VERSION_SCRIPT = '3.3.0.16';
+const VERSION_SCRIPT = '3.3.0.17';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.3.0.12';
 
@@ -57,6 +57,18 @@ var title3 = "Risque de bash";
 
 /***** ENUMERATIONS ***********************************************************/
 
+    var bashState = {
+        UNDECLARED: -999,
+        AKS_DEFENSE: -3,
+        NOTHING_FOUND: -2,
+        NO_DETAILS: -1,
+        INACTIVE_PLAYER: 0,
+        ESPIONAGE: 1, // only espionage probe
+        ESPIONAGE_ATTACK: 2, // sended as espionage with battleships
+        AKS_ATTACK: 3,
+        ATTACK: 99
+    };
+
     var missionState = {
         EXPEDITION: 0,
         COLONIZE: 1,
@@ -70,6 +82,7 @@ var title3 = "Risque de bash";
         DESTROY_MOON: 9
     };
 
+//401;3491|402;3480|403;80|404;95|406;18|407;1|408;1|502;28|503;6|
     var unitIds = {
         LITLE_TRANSPORTER: 202,
         BIG_TRANSPORTER: 203,
@@ -83,7 +96,17 @@ var title3 = "Risque de bash";
         BOMBER: 211,
         DESTROYER: 213,
         DEATHSTAR: 214,
-        BATTLECRUISER: 215
+        BATTLECRUISER: 215,
+        ROCKET_LAUNCHER: 401,
+        LIGHT_LASER: 402,
+        HEAVY_LASER: 403,
+        GAUSS_CANON: 404,
+        ION_CANON: 405,
+        PLASMA_CANON: 406,
+        LITLE_SHIELD_DOME: 407,
+        BIG_SHIELD_DOME: 408,
+        INTERCEPTOR_ROCKET: 502,
+        INTERPLANETARY_ROCKET: 503
     };
 
 
@@ -249,6 +272,7 @@ var settings = {
     }
 }; // cookie tabSettings
 
+
 var unitCosts = {};
 unitCosts[unitIds.LITLE_TRANSPORTER] = {metal: 2000, crystal: 2000, deuterium: 0};
 unitCosts[unitIds.BIG_TRANSPORTER] = {metal: 6000, crystal: 6000, deuterium: 0};
@@ -263,6 +287,16 @@ unitCosts[unitIds.BOMBER] = {metal: 50000, crystal: 25000, deuterium: 15000};
 unitCosts[unitIds.DESTROYER] = {metal: 60000, crystal: 50000, deuterium: 15000};
 unitCosts[unitIds.DEATHSTAR] = {metal: 5000000, crystal: 4000000, deuterium: 1000000};
 unitCosts[unitIds.BATTLECRUISER] = {metal: 30000, crystal: 40000, deuterium: 15000};
+unitCosts[unitIds.ROCKET_LAUNCHER] = {metal: 2000, crystal: 0, deuterium: 0};
+unitCosts[unitIds.LIGHT_LASER] = {metal: 1500, crystal: 500, deuterium: 0};
+unitCosts[unitIds.HEAVY_LASER] = {metal: 6000, crystal: 2000, deuterium: 0};
+unitCosts[unitIds.GAUSS_CANON] = {metal: 20000, crystal: 15000, deuterium: 2000};
+unitCosts[unitIds.ION_CANON] = {metal: 2000, crystal: 6000, deuterium: 0};
+unitCosts[unitIds.PLASMA_CANON] = {metal: 50000, crystal: 50000, deuterium: 30000};
+unitCosts[unitIds.LITLE_SHIELD_DOME] = {metal: 10000, crystal: 10000, deuterium: 0};
+unitCosts[unitIds.BIG_SHIELD_DOME] = {metal: 50000, crystal: 50000, deuterium: 0};
+unitCosts[unitIds.INTERCEPTOR_ROCKET] = {metal: 8000, crystal: 0, deuterium: 2000};
+unitCosts[unitIds.INTERPLANETARY_ROCKET] = {metal: 12500, crystal: 2500, deuterium: 10000};
 
 
 /***** CONSTRUCTORS ***********************************************************/
@@ -388,10 +422,22 @@ function CombatReport(msg) {
     this.defenderInactive = false;
     this.defenderName = 'Unknown';
     this.details = null;
+    this.fleetId = null;
     this.info = null;
+    this.isDefender = null;
     this.ressources = null;
-    this.status = -999;
+    this.status = bashState.UNDECLARED;
     /***** METHODS *****/ {
+    this.detailsLoaded = function(spyReportList) {
+        if (this.details)
+        {
+            this.details.attackerJSON = null; // parsed and not needed
+            this.details.defenderJSON = null; // parsed and not needed
+        }
+        this.getFleetId();
+        this.status = spyReportList.getStatus(this);
+        this.defenderInactive = this.status == bashState.INACTIVE_PLAYER;
+    };
     this.getDefender = function(msg) {
         // get Defender
         var result = 'Unknown';
@@ -417,6 +463,43 @@ function CombatReport(msg) {
             getMessageDetailsAsync(this.info.id);
         }
     };
+    this.getFleetId = function() {
+        var result = -1;
+        if (this.fleetid)
+            return this.fleetId;
+        if (this.details)
+        {
+            this.isDefender = false;
+            for (var id in this.details.attacker)
+            {
+                if (this.details.attacker[id].ownerName == playerName)
+                {
+                    result = parseInt(this.details.attacker[id].fleetID);
+                }
+            }
+            if (result == -1)
+            {
+                for (var defenderId in this.details.defender)
+                {
+                    var defender = this.details.defender[defenderId];
+                    if (defender.ownerName == playerName)
+                    {
+                        result = parseInt(defender.fleetID);
+                        log(this);
+                        this.isDefender = true;
+                    }
+                }
+            }
+            this.fleetId = result;
+        }
+        return result;
+    };
+    this.isBash = function() {
+        //TODO: exclude uni with espionage attacks
+        if (this.status == -1)
+            log(this);
+        return parseInt(this.status) > parseInt(bashState.ESPIONAGE);
+    };
     this.load = function(msg) {
         var result = false;
         try
@@ -436,16 +519,33 @@ function CombatReport(msg) {
                         var arr = spanList[0].innerHTML.split(': ');
                         this.attackerName = arr[1].replace('(', '').replace(')', '');
                         this.ressources = new Ressources(spanList[1]);
-                        this.debrisField = parseInt(spanList[2].innerHTML.split(': ')[1].replace('.',''));
+                        this.debrisField = extractRess(spanList[2].innerHTML);
                     }
                 }
-                this.status = spyReports.getStatus(this);
-                this.defenderInactive = this.status === 0;
             }
         }
         catch (ex)
         {
             console.log('Error on CombatReport.load(msg): ' + ex);
+        }
+        return result;
+    };
+    this.onlyEspionageProbe = function() {
+        var result = false;
+        if (this.details)
+        {
+            var shipList = this.details.attacker[this.fleetId];
+            if (shipList)
+            {
+                result = true;
+                for (var id in shipList.shipDetails)
+                {
+                    if (unitIds.ESPIONAGE_PROBE != id)
+                    {
+                        result = result && parseInt(shipList.shipDetails[id]) === 0;
+                    }
+                }
+            }
         }
         return result;
     };
@@ -456,8 +556,10 @@ function CombatReport(msg) {
             this.defenderInactive = obj.defenderInactive;
         this.defenderName = obj.defenderName;
         this.details = obj.details;
+        this.fleetId = obj.fleetId;
         this.info = new ReportInfo();
         this.info.setValues(obj.info);
+        this.isDefender = obj.isDefender;
         this.ressources = new Ressources();
         this.ressources.setValues(obj.ressources);
         this.status = obj.status;
@@ -465,6 +567,10 @@ function CombatReport(msg) {
     // load from message
     if (msg)
         this.load(msg);
+}
+
+function CombatReportList() {
+    this.reports = [];
 }
 
 function CollectingReport(msg) {
@@ -931,42 +1037,67 @@ function SpyReportList() {
     };
     // returns the state of the report (-1 = nothing found; 0 = inactive player; 1 = spyAttack; 99 = bash attack)
     this.getStatus = function(report) {
-        var result = -1;
+        var result = bashState.NOTHING_FOUND;
         if (report.defenderName && report.defenderName != 'Unknown' && report.info)
         {
             var idx = this.reports.findIndex(el => el.info.equal(report.info));
             if (idx > -1)
             {
                 // spy report has the same time and coords as the combat report
-                result = 1;
+                if (report.onlyEspionageProbe())
+                    result = bashState.ESPIONAGE;
+                else
+                    result = bashState.ESPIONAGE_ATTACK;
             }
             else
             {
                 // try to find the nearest spy report (max 1 day backwards)
-                var lastSearchDate = new Date(report.info.date.getDate() - 1);
+                var lastSearchDate = getBashTimespan();
                 var filterArr = this.reports.filter(el => el.playerName == report.defenderName &&
                                                     report.info.date.getTime() > el.info.date.getTime() &&
                                                     el.info.date.getTime() > lastSearchDate.getTime());
                 filterArr.sort(compareByDate); // sort date in descending order
+                if (report.defenderName == "Havanaseven")
+                    log(filterArr);
                 // has filter results and is inactive
-                result = (filterArr.length > 0) && (filterArr[0] && filterArr[0].inactive) ? 0 : -1;
+                if (filterArr[0] && filterArr[0].inactive)
+                {
+                    result = bashState.INACTIVE_PLAYER;
+                }
+                else if (report.details)
+                {
+                    var fleetId = report.getFleetId();
+                    if (report.details.attacker[fleetId])
+                    {
+                        if (report.details.attacker[fleetId].ownerName != report.attackerName)
+                            result = bashState.AKS_ATTACK;
+                        else
+                            result = bashState.ATTACK;
+                    }
+                    else if (report.details.defender[fleetId])
+                    {
+                        result = bashState.AKS_DEFENSE;
+                    }
+                }
             }
         }
+        else if (!report.details)
+            result = bashState.NO_DETAILS;
         return result;
     };
     this.load = function() {
-            var obj = loadFromLocalStorage('SpyReports');
-            if (obj)
+        var obj = loadFromLocalStorage('SpyReports');
+        if (obj)
+        {
+            for (var i = 0; i < obj.reports.length; i++)
             {
-                for (var i = 0; i < obj.reports.length; i++)
-                {
-                    var report = new SpyReport();
-                    report.setValues(obj.reports[i]);
-                    this.add(report);
-                }
-                this.updated = false;
+                var report = new SpyReport();
+                report.setValues(obj.reports[i]);
+                this.add(report);
             }
-        };
+            this.updated = false;
+        }
+    };
     this.save = function() {
         this.sortByDateDesc();
         this.deleteOldReports();
@@ -1050,6 +1181,7 @@ function TotalRessources() {
                     this.calcReports(this.combatReports, date);
                     this.calcReports(this.collectingReports, date);
                     this.calcTotal();
+                    calculateRess = false;
                     result = true;
                 }
             }
@@ -1059,55 +1191,43 @@ function TotalRessources() {
             }
             return result;
         };
-        this.calcLosses = function(units, isDefender) {
+        this.calcLosses = function(units, repairedDefense) {
             var result = new Ressources();
             for (var id in units)
             {
                 if (unitCosts[id])
                 {
-                    result.add(unitCosts[id], parseInt(units[id]));
-                }
-                if (isDefender) // calc deff lost without repaired deff
-                {
-                    //- details.repairedDefense
+                    if (id < 400)
+                        result.add(unitCosts[id], parseInt(units[id]));
+                    else if (repairedDefense)
+                    {
+                        var defenseValue = parseInt(units[id]) - parseInt(repairedDefense[id]);
+                        result.add(unitCosts[id], defenseValue);
+                    }
                 }
             }
             return result;
         };
-        this.calcLost = function(details) {
+        this.calcLost = function(combatReport) {
             var result = new Ressources();
+            var details = combatReport.details;
             if (details)
             {
-                var fleetId = -1;
-                var isDefender = false;
-                for (var id in details.attacker)
-                {
-                    if (details.attacker[id].ownerName == playerName)
-                    {
-                        fleetId = parseInt(details.attacker[id].fleetID);
-                    }
-                }
-                if (fleetId == -1)
-                {
-                    for (var defenderId in details.defender)
-                    {
-                        var defender = details.defender[defenderId];
-                        if (defender.ownerName == playerName)
-                        {
-                            fleetId = parseInt(defender.fleetID);
-                            isDefender = true;
-                        }
-                    }
-                }
-                if (fleetId > -1)
+                if (!combatReport.fleetId)
+                    combatReport.getFleetId();
+
+                if (combatReport.fleetId > -1)
                 {
                     var idx = details.combatRounds.length - 1;
                     var losses = details.combatRounds[idx].attackerLosses;
-                    if (isDefender)
+                    if (combatReport.isDefender)
                         losses = details.combatRounds[idx].defenderLosses;
+                    var repairedDefense = null;
+                    if (combatReport.isDefender)
+                        repairedDefense = details.repairedDefense;
                     for (var units in losses)
                     {
-                        var ress = this.calcLosses(losses[units], isDefender);
+                        var ress = this.calcLosses(losses[units], repairedDefense);
                         result.add(ress);
                     }
                 }
@@ -1130,7 +1250,7 @@ function TotalRessources() {
                     if (reportList[i].ressources.total && !Number.isNaN(reportList[i].ressources.total))
                         this.ressources.total += reportList[i].ressources.total;
 
-                    this.lostRessources.add(this.calcLost(reportList[i].details));
+                    this.lostRessources.add(this.calcLost(reportList[i]));
                 }
             }
         };
@@ -1142,11 +1262,12 @@ function TotalRessources() {
         };
         this.clear = function() {
             this.combatReports = [];
+            this.collectingReports = [];
             this.ressources.clear();
         };
         this.deleteOldReports = function() {
             var date = new Date();
-            date = new Date(date.getDate() - 3);
+            date.setDate(date.getDate() - 7);
             deleteOldReports(this.combatReports, date);
             deleteOldReports(this.collectingReports, date);
         };
@@ -1157,10 +1278,8 @@ function TotalRessources() {
 
             for (var i = 0; i < this.combatReports.length; i++)
             {
-                if (!this.combatReports[i].defenderInactive &&
-                    // exclude attacks of your self and attacks from
-                    this.combatReports[i].defenderName != playerName &&
-                    this.combatReports[i].defenderName != 'Unknown') // exclude Spy Attacks and total destroyed in the first round
+                //this.combatReports[i].defenderName != playerName && // exclude attacks of your self and attacks from
+                if (this.combatReports[i].isBash()) // exclude total destroyed in the first round
                 {
                     if (this.combatReports[i].info.date >= bashTimespan)
                         result.addAttack(this.combatReports[i]);
@@ -1408,15 +1527,11 @@ function deleteOldReports(reportList, lastDate)
     var i = reportList.length - 1;
     while (i > 0)
     {
-        if (reportList[i].info && reportList[i].info.date < lastDate)
+        if (reportList[i].info.date.getTime() < lastDate.getTime())
         {
             reportList.splice(i, 1);
-            i--;
         }
-        else
-        {
-            break;
-        }
+        i--;
     }
 }
 
@@ -1712,9 +1827,7 @@ function getMessageDetailsAsync(msgId) {
                                     {
                                         var json = firstSplit.split("');")[0];
                                         totalRess.combatReports[idx].details = jQuery.parseJSON(json);
-                                        totalRess.combatReports[idx].details.attackerJSON = null; // parsed and not needed
-                                        totalRess.combatReports[idx].details.defenderJSON = null; // parsed and not needed
-                                        log(totalRess.combatReports[idx].details);
+                                        totalRess.combatReports[idx].detailsLoaded(spyReports);
                                     }
                                 }
                             }
@@ -2070,6 +2183,7 @@ function trim(string)
 
 function versionCheck()
 {
+    //settings.lastVersion = "3.3.0.16"; // debug test
     if (settings.isNewVersion())
     {
         log('New Version detected!');
@@ -2081,14 +2195,24 @@ function versionCheck()
         else
             settings.write();
 
-        if (VERSION_SCRIPT == '3.3.0.15')
+        switch (VERSION_SCRIPT)
         {
-            // include new SpyReport Objects and the old inactive player list will not used anymore
-            spyReports.load();
-            totalRess.load();
-            settings.lastCheckCombatReport = getBashTimespan();
-            settings.lastCheckSpyReport = getBashTimespan();
-
+            case "3.3.0.15":
+                // include new SpyReport Objects and the old inactive player list will not used anymore
+                spyReports.load();
+                totalRess.load();
+                settings.lastCheckCombatReport = getBashTimespan();
+                settings.lastCheckSpyReport = getBashTimespan();
+                break;
+            case "3.3.0.17":
+                totalRess.load();
+                spyReports.load();
+                for (var i = 0; i < totalRess.combatReports.length; i++)
+                {
+                    totalRess.combatReports[i].detailsLoaded(spyReports);
+                }
+                totalRess.save();
+                break;
         }
     }
     else if (RESET_COOKIES) // for debug
