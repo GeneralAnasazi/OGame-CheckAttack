@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.3.0.19
+// @version 3.3.0.20
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
@@ -27,7 +27,7 @@ const SPAN_STATUS_ID = "id_check_attack_status";
 // has to set after a renew
 const VERSION_SCRIPT = '3.3.0.19';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
-const VERSION_SCRIPT_RESET = '3.3.0.19';
+const VERSION_SCRIPT_RESET = '3.3.0.20';
 
 // debug consts
 const DEBUG = true; // set it to true enable debug messages -> log(msg)
@@ -420,10 +420,12 @@ function CombatReport(msg) {
     this.defenderInactive = false;
     this.defenderName = 'Unknown';
     this.details = null;
-    this.fleetId = null;
+    this.fleetIds = null;
     this.info = null;
+    this.isAttacker = null;
     this.isDefender = null;
     this.ressources = null;
+    this.ressourcesLost = null;
     this.status = bashState.UNDECLARED;
     /***** METHODS *****/ {
     this.detailsLoaded = function(spyReportList) {
@@ -462,40 +464,38 @@ function CombatReport(msg) {
         }
     };
     this.getFleetId = function() {
-        var result = -1;
-        if (this.fleetid)
-            return this.fleetId;
+        var result = [];
+        if (this.fleetIds)
+            return this.fleetIds;
         if (this.details)
         {
             this.isDefender = false;
+            var fleetId = -1;
             for (var id in this.details.attacker)
             {
                 if (this.details.attacker[id].ownerName == playerName)
                 {
-                    result = parseInt(this.details.attacker[id].fleetID);
+                    fleetId = parseInt(this.details.attacker[id].fleetID);
+                    this.isAttacker = true;
+                    result.push(fleetId);
                 }
             }
-            if (result == -1)
+            for (var defenderId in this.details.defender)
             {
-                for (var defenderId in this.details.defender)
+                var defender = this.details.defender[defenderId];
+                if (defender.ownerName == playerName)
                 {
-                    var defender = this.details.defender[defenderId];
-                    if (defender.ownerName == playerName)
-                    {
-                        result = parseInt(defender.fleetID);
-                        log(this);
-                        this.isDefender = true;
-                    }
+                    fleetId = parseInt(defender.fleetID);
+                    result.push(fleetId);
+                    this.isDefender = true;
                 }
             }
-            this.fleetId = result;
+            this.fleetIds = result;
         }
         return result;
     };
     this.isBash = function() {
         //TODO: exclude uni with espionage attacks
-        if (this.status == -1)
-            log(this);
         return parseInt(this.status) > parseInt(bashState.ESPIONAGE);
     };
     this.load = function(msg) {
@@ -534,15 +534,18 @@ function CombatReport(msg) {
         var result = false;
         if (this.details)
         {
-            var shipList = this.details.attacker[this.fleetId];
-            if (shipList)
+            for (var fleetId in this.fleetIds)
             {
-                result = true;
-                for (var id in shipList.shipDetails)
+                var shipList = this.details.attacker[fleetId];
+                if (shipList)
                 {
-                    if (unitIds.ESPIONAGE_PROBE != id)
+                    result = true;
+                    for (var id in shipList.shipDetails)
                     {
-                        result = result && parseInt(shipList.shipDetails[id]) === 0;
+                        if (unitIds.ESPIONAGE_PROBE != id)
+                        {
+                            result = result && parseInt(shipList.shipDetails[id]) === 0;
+                        }
                     }
                 }
             }
@@ -557,17 +560,25 @@ function CombatReport(msg) {
 		if (obj.attackerName)
 			this.attackerName = trim(obj.attackerName);
         this.debrisField = obj.debrisField;
-        if (obj.defenderInactive)
-            this.defenderInactive = obj.defenderInactive;
+        this.defenderInactive = obj.defenderInactive;
 		if (obj.defenderName)
 	        this.defenderName = trim(obj.defenderName);
         this.details = obj.details;
-        this.fleetId = obj.fleetId;
+        this.fleetIds = obj.fleetIds;
         this.info = new ReportInfo();
         this.info.setValues(obj.info);
+        this.isAttacker = obj.isAttacker;
         this.isDefender = obj.isDefender;
-        this.ressources = new Ressources();
-        this.ressources.setValues(obj.ressources);
+        if (obj.ressources)
+        {
+            this.ressources = new Ressources();
+            this.ressources.setValues(obj.ressources);
+        }
+        if (obj.ressourcesLost)
+        {
+            this.ressourcesLost = new Ressources();
+            this.ressourcesLost.setValues(obj.ressourcesLost);
+        }
         this.status = obj.status;
     };}
     // load from message
@@ -733,7 +744,6 @@ function Ressources(span) {
     this.total = 0;
 
     this.add = function(ress, multiplier) {
-        log(ress); log(multiplier);
         if (!multiplier)
             multiplier = 1;
         this.metal += ress.metal * multiplier;
@@ -1225,11 +1235,11 @@ function TotalRessources() {
             var details = combatReport.details;
             if (details)
             {
-                if (!combatReport.fleetId)
-                    combatReport.getFleetId();
-
-                if (combatReport.fleetId > -1)
+                try
                 {
+                    if (!combatReport.fleetIds)
+                        combatReport.getFleetId();
+
                     var idx = details.combatRounds.length - 1;
                     var losses = details.combatRounds[idx].attackerLosses;
                     if (combatReport.isDefender)
@@ -1237,14 +1247,23 @@ function TotalRessources() {
                     var repairedDefense = null;
                     if (combatReport.isDefender)
                         repairedDefense = details.repairedDefense;
-                    for (var units in losses)
+
+                    if (losses)
                     {
-                        var ress = this.calcLosses(losses[units], repairedDefense);
-                        result.add(ress);
+                        for (var i = 0; i < combatReport.fleetIds.length; i++)
+                        {
+                            var fleetId = combatReport.fleetIds[i];
+                            var ress = this.calcLosses(losses[fleetId], repairedDefense);
+                            result.add(ress);
+                        }
+                        combatReport.ressourcesLost = result;
                     }
                 }
-                else
-                    log("Fleet ID not found");
+                catch (ex)
+                {
+                    console.log("Error on TotalRessources.calcLost: " + ex);
+                    log(combatReport);
+                }
             }
             return result;
         };
@@ -1736,7 +1755,6 @@ function getMessageAsync() {
                     var result = -1;
                     try
                     {
-                        log('result loaded -> execute data');
                         var div = document.getElementById("verificationAttaque");
                         if (div)
                         {
@@ -1786,14 +1804,14 @@ function getMessageAsync() {
                     }
                     catch(ex)
                     {
-                        console.log(ex);
+                        console.log("Error on getMessageAsync() -> success: " + ex);
                     }
                 }
             });
         }
         catch (ex)
         {
-            console.log(ex);
+            console.log("Error on getMessageAsync: " + ex);
         }
     }
 }
@@ -1826,7 +1844,6 @@ function getMessageDetailsAsync(msgId) {
                         var detailMessage = div.getElementsByClassName('detail_msg')[0];
                         if (detailMessage)
                         {
-                            log('detail report loaded');
                             var combatReportId = parseInt(detailMessage.getAttribute('data-msg-id'));
                             var idx = totalRess.combatReports.findIndex(cr => parseInt(cr.info.id) == combatReportId);
                             var detailReport = detailMessage.getElementsByClassName('detailReport')[0];
@@ -1911,7 +1928,6 @@ function isAppendedToday(date, isSpyReport)
     if (fLastCheck < lastCheckSettings)
     {
         fLastCheck = lastCheckSettings;
-        log("use lastCheck from settings " + fLastCheck);
     }
     return date > fLastCheck;
 }
