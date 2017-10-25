@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.3.0.20
+// @version 3.3.0.21
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
@@ -25,9 +25,9 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to set after a renew
-const VERSION_SCRIPT = '3.3.0.19';
+const VERSION_SCRIPT = '3.3.0.21';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
-const VERSION_SCRIPT_RESET = '3.3.0.20';
+const VERSION_SCRIPT_RESET = '3.3.0.18';
 
 // debug consts
 const DEBUG = true; // set it to true enable debug messages -> log(msg)
@@ -59,14 +59,15 @@ var title3 = "Risque de bash";
 
     var bashState = {
         UNDECLARED: -999,
-        OWN_DEFENSE: -4,
-        AKS_DEFENSE: -3,
-        NOTHING_FOUND: -2,
-        NO_DETAILS: -1,
+        OWN_DEFENSE: -3,
+        AKS_DEFENSE: -2,
+        NOTHING_FOUND: -1,
         INACTIVE_PLAYER: 0,
         ESPIONAGE: 1, // only espionage probe
-        ESPIONAGE_ATTACK: 2, // sended as espionage with battleships
-        AKS_ATTACK: 3,
+        ESPIONAGE_NO_DETAILS: 2, // espionage but no details to look for the used ships
+        ESPIONAGE_ATTACK: 3, // sended as espionage with battleships
+        AKS_ATTACK: 4,
+        NO_DETAILS: 5, // no datails and no spy report found -> counts as an attack
         ATTACK: 99
     };
 
@@ -204,6 +205,7 @@ var ressourceTitles = {
     metal: '',
     crystal: '',
     deuterium: '',
+    total: 'Total',
     isLoaded: function() {
         return (this.metal !== '' && this.crystal !== '' && this.deuterium !== '');
     },
@@ -496,7 +498,7 @@ function CombatReport(msg) {
     };
     this.isBash = function() {
         //TODO: exclude uni with espionage attacks
-        return parseInt(this.status) > parseInt(bashState.ESPIONAGE);
+        return parseInt(this.status) > parseInt(bashState.ESPIONAGE_NO_DETAILS);
     };
     this.load = function(msg) {
         var result = false;
@@ -534,8 +536,9 @@ function CombatReport(msg) {
         var result = false;
         if (this.details)
         {
-            for (var fleetId in this.fleetIds)
+            for (var i = 0; i < this.fleetIds; i++)
             {
+                var fleetId = this.fleetIds[i];
                 var shipList = this.details.attacker[fleetId];
                 if (shipList)
                 {
@@ -751,6 +754,9 @@ function Ressources(span) {
         this.deuterium += ress.deuterium * multiplier;
         //this.total += ress.total;
     };
+    this.calcTotal = function() {
+        this.total = this.metal + this.crystal + this.deuterium;
+    };
     this.clear = function() {
         this.metal = 0;
         this.crystal = 0;
@@ -802,6 +808,7 @@ function Ressources(span) {
             result += getSpanHtml(ressourceTitles.metal + ': ' + this.metal.toLocaleString(), spanAttr) + '</br>';
             result += getSpanHtml(ressourceTitles.crystal + ': ' + this.crystal.toLocaleString(), spanAttr) + '</br>';
             result += getSpanHtml(ressourceTitles.deuterium + ': ' + this.deuterium.toLocaleString(), spanAttr) + '</br>';
+            result += getSpanHtml(ressourceTitles.total + ': ' + this.total.toLocaleString(), spanAttr) + '</br>';
 
             result +='</div>';
         }
@@ -1050,11 +1057,12 @@ function SpyReportList() {
     };
     this.count = function() { return this.reports.length; };
     this.deleteOldReports = function() {
-        deleteOldReports(this.reports, getBashTimespan());
+        deleteOldReports(this.reports, getBashTimespan().addHours(-1));
     };
     // returns the state of the report (-1 = nothing found; 0 = inactive player; 1 = spyAttack; 99 = bash attack)
     this.getStatus = function(report) {
         var result = bashState.NOTHING_FOUND;
+        var idx = -1;
         if (report.defenderName && report.defenderName != 'Unknown' && report.info)
         {
             if (report.defenderName == playerName)
@@ -1062,7 +1070,7 @@ function SpyReportList() {
                 return bashState.OWN_DEFENSE;
             }
 
-            var idx = this.reports.findIndex(el => el.info.equal(report.info));
+            idx = this.reports.findIndex(el => el.info.equal(report.info));
             if (idx > -1)
             {
                 // spy report has the same time and coords as the combat report
@@ -1073,38 +1081,61 @@ function SpyReportList() {
             }
             else
             {
-                // try to find the nearest spy report (max 1 day backwards)
-                var lastSearchDate = getBashTimespan();
-                var filterArr = this.reports.filter(el => el.playerName == report.defenderName &&
-                                                    report.info.date.getTime() > el.info.date.getTime() &&
-                                                    el.info.date.getTime() > lastSearchDate.getTime());
-                filterArr.sort(compareByDate); // sort date in descending order
-                if (report.defenderName == "Havanaseven")
-                    log(filterArr);
-                // has filter results and is inactive
-                if (filterArr[0] && filterArr[0].inactive)
+                if (this.isInactive(report))
                 {
                     result = bashState.INACTIVE_PLAYER;
                 }
                 else if (report.details)
                 {
-                    var fleetId = report.getFleetId();
-                    if (report.details.attacker[fleetId])
+                    var fleetIds = report.getFleetId();
+                    for (var i = 0; i < fleetIds.length; i++)
                     {
-                        if (report.details.attacker[fleetId].ownerName != report.attackerName)
-                            result = bashState.AKS_ATTACK;
-                        else
-                            result = bashState.ATTACK;
-                    }
-                    else if (report.details.defender[fleetId])
-                    {
-                        result = bashState.AKS_DEFENSE;
+                        var fleetId = fleetIds[i];
+                        if (report.details.attacker[fleetId])
+                        {
+                            if (report.details.attacker[fleetId].ownerName != report.attackerName)
+                                result = bashState.AKS_ATTACK;
+                            else if (result != bashState.AKS_ATTACK)
+                                result = bashState.ATTACK;
+                        }
+                        else if (report.details.defender[fleetId] && result == bashState.NOTHING_FOUND)
+                        {
+                            result = bashState.AKS_DEFENSE;
+                        }
                     }
                 }
             }
         }
         else if (!report.details)
-            result = bashState.NO_DETAILS;
+        {
+            //try to look for a spy report at the same time
+            idx = this.reports.findIndex(el => el.info.equal(report.info));
+            if (idx > -1)
+                result = bashState.ESPIONAGE_NO_DETAILS;
+            else
+            {
+                if (this.isInactive(report))
+                    result = bashState.INACTIVE_PLAYER;
+                else
+                    result = bashState.NO_DETAILS;
+            }
+        }
+        return result;
+    };
+    this.isInactive = function(report) {
+        var result = false;
+        // try to find the nearest spy report (max 1 day backwards)
+        var lastSearchDate = getBashTimespan();
+        lastSearchDate.addHours(-1);
+        var filterArr = this.reports.filter(el => report.info.date.getTime() > el.info.date.getTime() &&
+                                            (el.info.coord == report.info.coord || el.playerName == report.defenderName) &&
+                                            el.info.date.getTime() > lastSearchDate.getTime());
+        filterArr.sort(compareByDate); // sort date in descending order
+        // has filter results and is inactive
+        if (filterArr[0] && filterArr[0].inactive)
+        {
+            result = true;
+        }
         return result;
     };
     this.load = function() {
@@ -1278,18 +1309,20 @@ function TotalRessources() {
                         this.ressources.crystal += reportList[i].ressources.crystal;
                     if (reportList[i].ressources.deuterium && !Number.isNaN(reportList[i].ressources.deuterium))
                         this.ressources.deuterium += reportList[i].ressources.deuterium;
-                    if (reportList[i].ressources.total && !Number.isNaN(reportList[i].ressources.total))
-                        this.ressources.total += reportList[i].ressources.total;
 
                     this.lostRessources.add(this.calcLost(reportList[i]));
                 }
+                reportList[i].status = spyReports.getStatus(reportList[i]);
             }
+            this.ressources.calcTotal();
+            this.lostRessources.calcTotal();
         };
         this.calcTotal = function() {
             this.totalRessources.clear();
             this.totalRessources.metal = this.ressources.metal - this.lostRessources.metal;
             this.totalRessources.crystal = this.ressources.crystal - this.lostRessources.crystal;
             this.totalRessources.deuterium = this.ressources.deuterium - this.lostRessources.deuterium;
+            this.totalRessources.calcTotal();
         };
         this.clear = function() {
             this.combatReports = [];
@@ -1377,6 +1410,18 @@ function TotalRessources() {
         };
     }
 }
+
+/***** prototype functions ****************************************************************/
+
+Date.prototype.addMSecs = function(msecs) {
+    this.setTime(this.getTime() + msecs);
+    return this;
+};
+
+Date.prototype.addHours = function(hours) {
+    this.addMSecs(hours * 60 * 60 * 1000);
+    return this;
+};
 
 /***** SCRIPT METHODS *********************************************************************/
 
@@ -1979,10 +2024,9 @@ function loadInfo()
     calculateRess = true;
     totalRess.loading = true;
     displayLoadingGif();
-    asyncHelper.startAsync(TABID_SPY_REPORT); // set the start values for the async process
 
     // start search for inactive players -> async
-    log('start getMessage');
+    asyncHelper.startAsync(TABID_SPY_REPORT); // set the start values for the async process
     getMessageAsync();
 }
 
