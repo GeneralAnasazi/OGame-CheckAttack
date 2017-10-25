@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.3.0.21
+// @version 3.3.0.22
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
@@ -25,7 +25,7 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to set after a renew
-const VERSION_SCRIPT = '3.3.0.21';
+const VERSION_SCRIPT = '3.3.0.22';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.3.0.18';
 
@@ -1311,8 +1311,9 @@ function TotalRessources() {
                         this.ressources.deuterium += reportList[i].ressources.deuterium;
 
                     this.lostRessources.add(this.calcLost(reportList[i]));
+                    if (calculateRess)
+                        reportList[i].status = spyReports.getStatus(reportList[i]);
                 }
-                reportList[i].status = spyReports.getStatus(reportList[i]);
             }
             this.ressources.calcTotal();
             this.lostRessources.calcTotal();
