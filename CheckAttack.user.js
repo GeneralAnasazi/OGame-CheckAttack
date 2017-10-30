@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.3.0.22
+// @version 3.3.0.23
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
@@ -13,6 +13,9 @@
 // @require     http://ajax.googleapis.com/ajax/libs/jquery/2.1.0/jquery.min.js
 
 // ==/UserScript==
+"use strict";
+"use moz";
+
 
 /***** CONSTANTS *************************************************************/
 const COOKIE_EXPIRES_DAYS = 1;
@@ -24,10 +27,10 @@ const DIV_STATUS_GIF_ID = "id_check_attack_status_div";
 const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
-// has to set after a renew
-const VERSION_SCRIPT = '3.3.0.22';
+// has to be set after an update
+const VERSION_SCRIPT = '3.3.0.23';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
-const VERSION_SCRIPT_RESET = '3.3.0.18';
+const VERSION_SCRIPT_RESET = '3.3.0.23';
 
 // debug consts
 const DEBUG = true; // set it to true enable debug messages -> log(msg)
@@ -43,8 +46,6 @@ var language = document.getElementsByName('ogame-language')[0].content;
 var playerName = document.getElementsByName('ogame-player-name')[0].content;
 var sendFleetList = new SendFleetList();
 var sendFleetPage = -1;
-var spyReports = new SpyReportList();
-var totalRess = new TotalRessources();
 
 // translation vars (don't translate here)
 var captionAttack = "attaque";
@@ -110,7 +111,7 @@ var title3 = "Risque de bash";
         INTERPLANETARY_ROCKET: 503
     };
 
-/***** Objects ***************************************************************/
+/***** Objects ****************************************************************/
 
 // async object
 var asyncHelper = {
@@ -161,6 +162,52 @@ var asyncHelper = {
     // is an async process started
     started: function() {
         return (this.currentPage > -1 && this.maxPage > -1);
+    }
+};
+
+/** Main object to handle the data */
+var main = {
+    combatReports: new CombatReportList(),
+    recycleReports: new RecycleReportList(),
+    spyReports: new SpyReportList(),
+    totalRessources: new TotalRessources(),
+    // async help var
+    reading: false,
+
+    /***** METHODS */
+    calc: function() {
+        log('start calc');
+        this.totalRessources.clear();
+        this.totalRessources.calcReports(this.combatReports.reports, getBashTimespan());
+        this.totalRessources.calcReports(this.recycleReports.reports, getBashTimespan());
+        this.totalRessources.calcTotal();
+        this.totalRessources.save();
+        calculateRess = false;
+    },
+    load: function() {
+        this.combatReports.loadFromLocalStorage();
+        this.recycleReports.loadFromLocalStorage();
+        this.spyReports.loadFromLocalStorage();
+        this.totalRessources.load();
+    },
+    save: function() {
+        this.spyReports.saveToLocalStorage();
+        if (this.combatReports.saveToLocalStorage() || this.recycleReports.saveToLocalStorage() || calculateRess)
+        {
+            this.calc();
+        }
+    },
+    start: function() {
+        this.reading = true;
+    },
+    stop: function() {
+        if (this.reading && this.combatReports.detailsLoadCount == -1)
+        {
+            this.save();
+            this.reading = false;
+            asyncHelper.clearAsync();
+            display();
+        }
     }
 };
 
@@ -298,6 +345,17 @@ unitCosts[unitIds.BIG_SHIELD_DOME] = {metal: 50000, crystal: 50000, deuterium: 0
 unitCosts[unitIds.INTERCEPTOR_ROCKET] = {metal: 8000, crystal: 0, deuterium: 2000};
 unitCosts[unitIds.INTERPLANETARY_ROCKET] = {metal: 12500, crystal: 2500, deuterium: 10000};
 
+/***** prototype functions ****************************************************************/
+
+Date.prototype.addMSecs = function(msecs) {
+    this.setTime(this.getTime() + msecs);
+    return this;
+};
+
+Date.prototype.addHours = function(hours) {
+    this.addMSecs(hours * 60 * 60 * 1000);
+    return this;
+};
 
 /***** CONSTRUCTORS ***********************************************************/
 
@@ -427,16 +485,84 @@ function CombatReport(msg) {
     this.isAttacker = null;
     this.isDefender = null;
     this.ressources = null;
+    this.ressourcesLoot = null;
     this.ressourcesLost = null;
     this.status = bashState.UNDECLARED;
     /***** METHODS *****/ {
+    this.calcLosses = function(units, repairedDefense) {
+        var result = new Ressources();
+        for (var id in units)
+        {
+            if (unitCosts[id])
+            {
+                if (id < 400)
+                    result.add(unitCosts[id], parseInt(units[id]));
+                else if (repairedDefense)
+                {
+                    var defenseValue = parseInt(units[id]) - parseInt(repairedDefense[id]);
+                    result.add(unitCosts[id], defenseValue);
+                }
+            }
+        }
+        return result;
+    };
+    this.calcLost = function() {
+        var result = new Ressources();
+        if (this.details)
+        {
+            try
+            {
+                if (!this.fleetIds)
+                    this.getFleetId();
+
+                var idx = this.details.combatRounds.length - 1;
+                var losses = this.details.combatRounds[idx].attackerLosses;
+                if (this.isDefender)
+                    losses = this.details.combatRounds[idx].defenderLosses;
+                var repairedDefense = null;
+                if (this.isDefender)
+                    repairedDefense = this.details.repairedDefense;
+
+                if (losses)
+                {
+                    for (var i = 0; i < this.fleetIds.length; i++)
+                    {
+                        var fleetId = this.fleetIds[i];
+                        var ress = this.calcLosses(losses[fleetId], repairedDefense);
+                        result.add(ress);
+                    }
+                    this.ressourcesLost = result;
+                }
+            }
+            catch (ex)
+            {
+                console.log("Error on CombatReport.calcLost: " + ex);
+                log(this);
+            }
+        }
+        return result;
+    };
     this.detailsLoaded = function(spyReportList) {
         if (this.details)
         {
-            this.details.attackerJSON = null; // parsed and not needed
-            this.details.defenderJSON = null; // parsed and not needed
+            this.details.attackerJSON = undefined; // parsed and not needed
+            this.details.defenderJSON = undefined; // parsed and not needed
+            try
+            {
+                this.getFleetId();
+                this.calcLost();
+                // get loot
+                this.ressourcesLoot = new Ressources();
+                this.ressourcesLoot.metal = this.details.loot.metal;
+                this.ressourcesLoot.crystal = this.details.loot.crystal;
+                this.ressourcesLoot.deuterium = this.details.loot.deuterium;
+            }
+            catch (ex)
+            {
+                console.log("Error on CombatReport.detailsLoaded: " + ex);
+                log(this);
+            }
         }
-        this.getFleetId();
         this.status = spyReportList.getStatus(this);
         this.defenderInactive = this.status == bashState.INACTIVE_PLAYER;
     };
@@ -461,7 +587,6 @@ function CombatReport(msg) {
     this.getDetails = function() {
         if (this.info.id)
         {
-            totalRess.loadDetailsCount++;
             getMessageDetailsAsync(this.info.id);
         }
     };
@@ -582,6 +707,11 @@ function CombatReport(msg) {
             this.ressourcesLost = new Ressources();
             this.ressourcesLost.setValues(obj.ressourcesLost);
         }
+        if (obj.ressourcesLoot)
+        {
+            this.ressourcesLoot = new Ressources();
+            this.ressourcesLoot.setValues(obj.ressourcesLoot);
+        }
         this.status = obj.status;
     };}
     // load from message
@@ -590,13 +720,62 @@ function CombatReport(msg) {
 }
 
 function CombatReportList() {
-    this.reports = [];
+	ReportList.call(this, 'CombatReportList', getBashTimespan(-6 * 24 * 60)); // 7 days are stored
+
+    this.detailsLoadCount = -1;
+
+    this.add = function(report) {
+		var result = this.reports.findIndex(el => el.info.equal(report.info)) == -1;
+		if (result)
+		{
+            this.reports.push(report);
+            this.updated = true;
+            if (!report.Datails)
+            {
+                report.getDetails();
+                this.detailsLoadCount++;
+            }
+        }
+        return result;
+    };
+    /** get the bash attacks */
+    this.getAttacks = function() {
+        var result = new AttackTracker();
+        result.clear();
+        var bashTimespan = getBashTimespan();
+
+        for (var i = 0; i < this.reports.length; i++)
+        {
+            //this.combatReports[i].defenderName != playerName && // exclude attacks of your self and attacks from
+            if (this.reports[i].isBash()) // exclude total destroyed in the first round
+            {
+                if (this.reports[i].info.date >= bashTimespan)
+                    result.addAttack(this.reports[i]);
+                else
+                    break;
+            }
+        }
+        result.sortAttacks();
+        return result;
+    };
+	//implement abstract function from ReportList
+	this.setValues = function(obj) {
+		for (var i = 0; i < obj.reports.length; i++)
+		{
+			var report = new CombatReport();
+			report.setValues(obj.reports[i]);
+			this.add(report);
+		}
+	};
+
 }
+CombatReportList.prototype = Object.create(ReportList.prototype);
+CombatReportList.prototype.constructor = CombatReportList;
 
-function CollectingReport(msg) {
-    this.info = null;
-    this.ressources = null;
+function RecycleReport(msg) {
+    Report.call(this); // inherited
 
+	/*** METHODS ************************************************/
     this.parseMessage = function(msg) {
         if (msg)
         {
@@ -646,13 +825,45 @@ function CollectingReport(msg) {
         }
     };
     this.setValues = function(report) {
-        this.info = new ReportInfo();
-        this.info.setValues(report.info);
-        this.ressources = new Ressources();
-        this.ressources.setValues(report.ressources);
+		this._setValues(report); //inherited
     };
 
     this.parseMessage(msg);
+}
+RecycleReport.prototype = Object.create(Report.prototype);
+RecycleReport.prototype.constructor = RecycleReport;
+
+function RecycleReportList() {
+    ReportList.call(this, 'RecycleReportList', getBashTimespan(-6 * 24 * 60));  // 7 days are stored
+
+    this.setValues = function(obj) {
+        for (var i = 0; i < obj.reports.length; i++)
+        {
+            var report = new RecycleReport();
+            report.setValues(obj.reports[i]);
+            this.reports.push(report);
+        }
+    };
+}
+RecycleReportList.prototype = Object.create(ReportList.prototype);
+RecycleReportList.prototype.constructor = RecycleReportList;
+
+/** Default report object */
+function Report() {
+	this.info = null;
+	this.ressources = undefined; // can be used (have a look for super -> call)
+
+	//pseudo private
+    this._setValues = function(report) {
+        this.info = new ReportInfo();
+        this.info.setValues(report.info);
+        if (report.ressources)
+        {
+            this.ressources = new Ressources();
+            this.ressources.setValues(report.ressources);
+        }
+    };
+
 }
 
 function ReportInfo(msg) {
@@ -738,6 +949,78 @@ function ReportInfo(msg) {
     };}
 
     this.parseMessage(msg);
+}
+
+function ReportList(storageKey, deleteDate) {
+    this._deleteDate = deleteDate;
+    this._storageKey = storageKey;
+    this.reports = [];
+    this.updated = false;
+
+	this.add = function(report) {
+		var isNew = this.reports.findIndex(el => el.info.equal(report.info)) == -1;
+		if (isNew)
+		{
+            this.reports.push(report);
+            this.updated = true;
+        }
+        return isNew;
+	};
+	this.addRange = function(reportList) {
+        if (reportList && reportList.reports)
+		{
+			for (var i = 0; i < reportList.reports.length; i++)
+			{
+				this.updated = this.updated || this.add(reportList.reports[i]);
+			}
+		}
+	};
+	this.clear = function() {
+        this.reports = [];
+        this.updated = true;
+    };
+    this.count = function() { return this.reports.length; };
+    this.deleteOldReports = function(date) {
+        deleteOldReports(this.reports, date);
+    };
+	this.loadFromLocalStorage = function() {
+		if (this._storageKey)
+		{
+			var obj = loadFromLocalStorage(this._storageKey);
+			if (obj)
+			{
+				// this function has to be implemented in other objects (abstract function)
+                this.setValues(obj);
+                this.updated = false;
+			}
+		}
+	};
+	this.remove = function(report) {
+		var idx = this.reports.findIndex(el => el.info.equal(report.info));
+		if (idx > -1)
+		{
+            this.reports.splice(idx, 1);
+            this.updated = true;
+		}
+	};
+	this.saveToLocalStorage = function() {
+        var result = false;
+		if (this._storageKey)
+		{
+            this.sortByDateDesc();
+            this.deleteOldReports(this._deleteDate);
+            if (this.updated)
+            {
+                writeToLocalStorage(this, this._storageKey);
+                result = true;
+            }
+            this.updated = false;
+        }
+        return result;
+    };
+    this.sortByDateDesc = function() {
+        this.reports.sort(compareByDate);
+    };
 }
 
 function Ressources(span) {
@@ -1002,8 +1285,8 @@ function SendFleetList() {
 }
 
 function SpyReport(msg) {
+    Report.call(this);
     this.inactive = null; // initialized with null -> other values(true/false) and readed or loaded
-    this.info = null;
     this.playerName = 'Unknown';
 
     /***** METHODS *****/ {
@@ -1028,9 +1311,8 @@ function SpyReport(msg) {
         }
     };
     this.setValues = function(report) {
+        this._setValues(report);
         this.inactive = report.inactive;
-        this.info = new ReportInfo();
-        this.info.setValues(report.info);
 		if (report.playerName)
 			this.playerName = trim(report.playerName);
     };}
@@ -1039,27 +1321,15 @@ function SpyReport(msg) {
     if (msg)
         this.readMessage(msg);
 }
+SpyReport.prototype = Object.create(Report.prototype);
+SpyReport.prototype.constructor = RecycleReport;
+
 
 function SpyReportList() {
-    this.reports = [];
-    this.updated = false;
+    ReportList.call(this, 'SpyReportList', getBashTimespan(-60));
 
     /***** METHODS *****/ {
-    this.add = function(report) {
-        var result = false;
-        if (this.reports.findIndex(el => el.info.equal(report.info)) == -1)
-        {
-            this.reports.push(report);
-            this.updated = true;
-            result = true;
-        }
-        return result;
-    };
-    this.count = function() { return this.reports.length; };
-    this.deleteOldReports = function() {
-        deleteOldReports(this.reports, getBashTimespan().addHours(-1));
-    };
-    // returns the state of the report (-1 = nothing found; 0 = inactive player; 1 = spyAttack; 99 = bash attack)
+    //** returns the bash state of the report */
     this.getStatus = function(report) {
         var result = bashState.NOTHING_FOUND;
         var idx = -1;
@@ -1138,181 +1408,35 @@ function SpyReportList() {
         }
         return result;
     };
-    this.load = function() {
-        var obj = loadFromLocalStorage('SpyReports');
-        if (obj)
+    this.setValues = function(obj) {
+        for (var i = 0; i < obj.reports.length; i++)
         {
-            for (var i = 0; i < obj.reports.length; i++)
-            {
-                var report = new SpyReport();
-                report.setValues(obj.reports[i]);
-                this.add(report);
-            }
-            this.updated = false;
+            var report = new SpyReport();
+            report.setValues(obj.reports[i]);
+            this.add(report);
         }
-    };
-    this.save = function() {
-        this.sortByDateDesc();
-        this.deleteOldReports();
-        writeToLocalStorage(this, 'SpyReports');
-        this.updated = false;
-    };
-    this.sortByDateDesc = function() {
-        this.reports.sort(compareByDate);
     };}
 }
+SpyReportList.prototype = Object.create(ReportList.prototype);
+SpyReportList.prototype.constructor = RecycleReportList;
 
 function TotalRessources() {
-    this.collectingReports = [];
-    this.combatReports = [];
-
-    this.inactivePlayersLength = -1; // spy reports
-    this.lastCalcLength = -1; // combat reports
-    this.lastCollectingLength = -1; //recycle reports
-    this.lastCombatReport = getBashTimespan();
-    this.loadDetailsCount = -1;
-    this.loading = false;
     this.ressources = new Ressources(); // Raid Ressources
     this.lostRessources = new Ressources();
     this.totalRessources = new Ressources();
 
     /*** METHODS *********************/ {
-        this.add = function(report) {
-            var idx;
-            if (report.attackerName)
-            {
-                idx = this.combatReports.findIndex(el => el.info.equal(report.info));
-                if (idx == -1)
-                {
-                    this.combatReports.push(report);
-                    report.getDetails();
-                }
-            }
-            else
-            {
-                idx = this.collectingReports.findIndex(el => el.info.equal(report.info));
-                if (idx == -1)
-                {
-                    this.collectingReports.push(report);
-                }
-            }
-            return idx == -1;
-        };
-        this.append = function(report) {
-            var result = false;
-            //this function is a litle bit tricky -> all reports with ressources and the info can be added (like inheritance in other languages)
-            if (report && report.ressources)
-            {
-                if (this.add(report)) // report exists
-                {
-                    result = true;
-                    if (report.ressources.metal)
-                        this.ressources.metal += report.ressources.metal;
-                    if (report.ressources.crystal)
-                        this.ressources.crystal += report.ressources.crystal;
-                    if (report.ressources.deuterium)
-                        this.ressources.deuterium += report.ressources.deuterium;
-                    if (report.ressources.total)
-                        this.ressources.total += report.ressources.total;
-                }
-            }
-            return result;
-        };
-        this.calc = function(date) {
-            var result = false;
-            try
-            {
-                if (!date)
-                    date = getBashTimespan();
-                if (this.lastCalcLength != this.combatReports.length || this.lastCollectingLength != this.collectingReports.length || calculateRess)
-                {
-                    this.lastCalcLength = this.combatReports.length;
-                    this.lastCollectingLength = this.collectingReports.length;
-                    this.ressources.clear();
-                    this.lostRessources.clear();
-                    this.sortByDateDesc();
-                    this.calcReports(this.combatReports, date);
-                    this.calcReports(this.collectingReports, date);
-                    this.calcTotal();
-                    calculateRess = false;
-                    result = true;
-                }
-            }
-            catch (ex)
-            {
-                console.log('Error on calc TotalRessources: ' + ex);
-            }
-            return result;
-        };
-        this.calcLosses = function(units, repairedDefense) {
-            var result = new Ressources();
-            for (var id in units)
-            {
-                if (unitCosts[id])
-                {
-                    if (id < 400)
-                        result.add(unitCosts[id], parseInt(units[id]));
-                    else if (repairedDefense)
-                    {
-                        var defenseValue = parseInt(units[id]) - parseInt(repairedDefense[id]);
-                        result.add(unitCosts[id], defenseValue);
-                    }
-                }
-            }
-            return result;
-        };
-        this.calcLost = function(combatReport) {
-            var result = new Ressources();
-            var details = combatReport.details;
-            if (details)
-            {
-                try
-                {
-                    if (!combatReport.fleetIds)
-                        combatReport.getFleetId();
-
-                    var idx = details.combatRounds.length - 1;
-                    var losses = details.combatRounds[idx].attackerLosses;
-                    if (combatReport.isDefender)
-                        losses = details.combatRounds[idx].defenderLosses;
-                    var repairedDefense = null;
-                    if (combatReport.isDefender)
-                        repairedDefense = details.repairedDefense;
-
-                    if (losses)
-                    {
-                        for (var i = 0; i < combatReport.fleetIds.length; i++)
-                        {
-                            var fleetId = combatReport.fleetIds[i];
-                            var ress = this.calcLosses(losses[fleetId], repairedDefense);
-                            result.add(ress);
-                        }
-                        combatReport.ressourcesLost = result;
-                    }
-                }
-                catch (ex)
-                {
-                    console.log("Error on TotalRessources.calcLost: " + ex);
-                    log(combatReport);
-                }
-            }
-            return result;
-        };
         this.calcReports = function(reportList, date) {
+            log('calcReports: ' + date);
             for (var i = 0; i < reportList.length; i++)
             {
-                if (reportList[i].info.date > date && reportList[i].ressources)
+                if (reportList[i].info.date > date && reportList[i].ressourcesLoot)
                 {
-                    if (reportList[i].ressources.metal && !Number.isNaN(reportList[i].ressources.metal))
-                        this.ressources.metal += reportList[i].ressources.metal;
-                    if (reportList[i].ressources.crystal && !Number.isNaN(reportList[i].ressources.crystal))
-                        this.ressources.crystal += reportList[i].ressources.crystal;
-                    if (reportList[i].ressources.deuterium && !Number.isNaN(reportList[i].ressources.deuterium))
-                        this.ressources.deuterium += reportList[i].ressources.deuterium;
-
-                    this.lostRessources.add(this.calcLost(reportList[i]));
+					this.ressources.add(reportList[i].ressourcesLoot);
+                    if (reportList[i].ressourcesLost)
+                        this.lostRessources.add(reportList[i].ressourcesLost);
                     if (calculateRess)
-                        reportList[i].status = spyReports.getStatus(reportList[i]);
+                        reportList[i].status = main.spyReports.getStatus(reportList[i]);
                 }
             }
             this.ressources.calcTotal();
@@ -1326,77 +1450,23 @@ function TotalRessources() {
             this.totalRessources.calcTotal();
         };
         this.clear = function() {
-            this.combatReports = [];
-            this.collectingReports = [];
             this.ressources.clear();
-        };
-        this.deleteOldReports = function() {
-            var date = new Date();
-            date.setDate(date.getDate() - 7);
-            deleteOldReports(this.combatReports, date);
-            deleteOldReports(this.collectingReports, date);
-        };
-        this.getAttacks = function() {
-            var result = new AttackTracker();
-            result.clear();
-            var bashTimespan = getBashTimespan();
-
-            for (var i = 0; i < this.combatReports.length; i++)
-            {
-                //this.combatReports[i].defenderName != playerName && // exclude attacks of your self and attacks from
-                if (this.combatReports[i].isBash()) // exclude total destroyed in the first round
-                {
-                    if (this.combatReports[i].info.date >= bashTimespan)
-                        result.addAttack(this.combatReports[i]);
-                    else
-                        break;
-                }
-            }
-            result.sortAttacks();
-            return result;
+            this.lostRessources.clear();
         };
         this.load = function() {
             var obj = loadFromLocalStorage('TotalRaidRessources');
             if (obj)
             {
-                // CollectingReports
-                var i; var report;
-                for (i = 0; i < obj.collectingReports.length; i++)
-                {
-                    report = new CollectingReport();
-                    report.setValues(obj.collectingReports[i]);
-                    this.collectingReports.push(report);
-                }
-                // Combat Reports
-                for (i = 0; i < obj.combatReports.length; i++)
-                {
-                    report = new CombatReport();
-                    report.setValues(obj.combatReports[i]);
-                    this.combatReports.push(report);
-                }
                 // Ressources
                 this.ressources.setValues(obj.ressources);
                 this.lostRessources.setValues(obj.lostRessources);
                 this.totalRessources.setValues(obj.totalRessources);
-                this.lastCombatReport = new Date(obj.lastCombatReport);
-                this.inactivePlayersLength = obj.inactivePlayersLength;
-                this.lastCalcLength = obj.lastCalcLength;
-                this.lastCollectingLength = obj.lastCollectingLength;
             }
             ressourceTitles.read();
         };
         this.save = function() {
-            log('save total ress');
-            this.lastCalcLength = this.combatReports.length;
-            this.lastCollectingLength = this.collectingReports.length;
-            this.sortByDateDesc();
-            this.deleteOldReports();
             writeToLocalStorage(this, 'TotalRaidRessources');
             ressourceTitles.write();
-        };
-        this.sortByDateDesc = function() {
-            this.combatReports.sort(compareByDate);
-            this.collectingReports.sort(compareByDate);
         };
         this.toHtml = function(title, className, type) {
             switch (type)
@@ -1412,19 +1482,23 @@ function TotalRessources() {
     }
 }
 
-/***** prototype functions ****************************************************************/
-
-Date.prototype.addMSecs = function(msecs) {
-    this.setTime(this.getTime() + msecs);
-    return this;
-};
-
-Date.prototype.addHours = function(hours) {
-    this.addMSecs(hours * 60 * 60 * 1000);
-    return this;
-};
-
 /***** SCRIPT METHODS *********************************************************************/
+
+function testIt() {
+    if (test)
+    {
+        try
+        {
+            main.calc();
+            settings.lastCheckCombatReport = getBashTimespan();
+            settings.lastCheckSpyReport = getBashTimespan();
+        }
+        catch (ex)
+        {
+            console.log("Error Test Function: " + ex);
+        }
+    }
+}
 
 //TODO: translation new vars
 // translate the viewed vars
@@ -1536,21 +1610,11 @@ function checkRaidFinished()
 {
     try
     {
-        if (totalRess.calc())
-        {
-            totalRess.save();
-            display();
-        }
-        if (spyReports.updated)
-            spyReports.save();
+        main.stop();
     }
     catch (ex)
     {
         console.log(ex);
-    }
-    finally
-    {
-        display();
     }
 }
 
@@ -1623,10 +1687,8 @@ function display() {
 
     try
     {
-        log(spyReports);
-        log(totalRess);
-        var attackTracker = totalRess.getAttacks();
-        log(attackTracker);
+        log(main);
+        var attackTracker = main.combatReports.getAttacks();
         var coordByNbAttaque = {};
         var isGood =true;
 
@@ -1690,9 +1752,9 @@ function display() {
         }
 
         htmlCount += '</div>';
-        htmlCount += totalRess.toHtml('Raid-Ressources', 'attackContent', 'RaidRessources');
-        htmlCount += totalRess.toHtml('Lost-Ressources', 'attackContent', 'LostRessources');
-        htmlCount += totalRess.toHtml('Total-Ressources', 'attackContent', 'Total');
+        htmlCount += main.totalRessources.toHtml('Raid-Ressources', 'attackContent', 'RaidRessources');
+        htmlCount += main.totalRessources.toHtml('Lost-Ressources', 'attackContent', 'LostRessources');
+        htmlCount += main.totalRessources.toHtml('Total-Ressources', 'attackContent', 'Total');
 
         var info = createDiv(DIV_STATUS_ID, "content-box-s");
         info.style.width = '170px';
@@ -1760,10 +1822,20 @@ function extractRess(res)
     return parseInt(res);
 }
 
-function getBashTimespan()
+function flatten(obj) {
+    var result = Object.create(obj);
+    for(var key in result) {
+        result[key] = result[key];
+    }
+    return result;
+}
+
+function getBashTimespan(addMinutes)
 {
     var date = new Date();
     date.setDate(date.getDate() - 1);
+    if (addMinutes)
+        date.setTime(date.getTime() + addMinutes * 60 * 1000);
     return date;
 }
 
@@ -1783,7 +1855,7 @@ function getMessageAsync() {
     {
         try
         {
-            return this.$.ajax({
+            return $.ajax({
                 type:     'POST',
                 url:      '/game/index.php?page=messages',
                 data:     'messageId=-1&tabid='+asyncHelper.tabId+'&action=107&pagination='+asyncHelper.currentPage+'&ajax=1',
@@ -1831,13 +1903,12 @@ function getMessageAsync() {
                                 switch (asyncHelper.tabId)
                                 {
                                     case TABID_SPY_REPORT:
-                                        spyReports.save();
+                                        main.spyReports.saveToLocalStorage();
                                         asyncHelper.clearAsync();
                                         asyncHelper.startAsync(TABID_COMBAT_REPORT);
                                         getMessageAsync();
                                         break;
                                     case TABID_COMBAT_REPORT:
-                                        asyncHelper.clearAsync();
                                         checkRaidFinished();
                                         break;
                                 }
@@ -1865,7 +1936,7 @@ function getMessageAsync() {
 function getMessageDetailsAsync(msgId) {
     try
     {
-        return this.$.ajax({
+        return $.ajax({
             type:     'GET',
             url:      '/game/index.php?page=messages',
             data:     'messageId='+msgId+'&tabid='+TABID_COMBAT_REPORT+'&ajax=1',
@@ -1891,7 +1962,7 @@ function getMessageDetailsAsync(msgId) {
                         if (detailMessage)
                         {
                             var combatReportId = parseInt(detailMessage.getAttribute('data-msg-id'));
-                            var idx = totalRess.combatReports.findIndex(cr => parseInt(cr.info.id) == combatReportId);
+                            var idx = main.combatReports.reports.findIndex(cr => parseInt(cr.info.id) == combatReportId);
                             var detailReport = detailMessage.getElementsByClassName('detailReport')[0];
                             if (idx > -1)
                             {
@@ -1901,8 +1972,8 @@ function getMessageDetailsAsync(msgId) {
                                     if (firstSplit)
                                     {
                                         var json = firstSplit.split("');")[0];
-                                        totalRess.combatReports[idx].details = jQuery.parseJSON(json);
-                                        totalRess.combatReports[idx].detailsLoaded(spyReports);
+                                        main.combatReports.reports[idx].details = jQuery.parseJSON(json);
+                                        main.combatReports.reports[idx].detailsLoaded(main.spyReports);
                                     }
                                 }
                             }
@@ -1912,18 +1983,16 @@ function getMessageDetailsAsync(msgId) {
                     else
                         console.log('div "parseCombatReportDetail" not found');
 
-                    totalRess.loadDetailsCount--;
+                    main.combatReports.detailsLoadCount--;
                 }
                 catch(ex)
                 {
-                    totalRess.loadDetailsCount--;
+                    main.combatReports.detailsLoadCount--;
                     console.log('Error on getMessageDetailsAsync('+msgId+'): ' + ex);
                 }
-
-                if (totalRess.loadDetailsCount == -1 && totalRess.loading)
+                finally
                 {
-                    totalRess.save();
-                    totalRess.loading = false;
+                    main.stop();
                 }
             }
         });
@@ -1983,19 +2052,14 @@ function loadData()
     localeSettings.load();
     translate();
     settings.load();
+    main.load();
     versionCheck();
 
-    //sendFleetList.read();
-    deleteValueLocalStorage('SendFleetList');
-    spyReports.load();
-    totalRess.load();
-
-    if (spyReports.count === 0)
+    if (main.spyReports.count === 0)
     {
         settings.lastCheckSpyReport = getBashTimespan();
         loadInfo();
     }
-    log(settings);
 }
 
 function loadFromLocalStorage(key)
@@ -2023,7 +2087,7 @@ function loadInfo()
         return;
 
     calculateRess = true;
-    totalRess.loading = true;
+    main.start();
     displayLoadingGif();
 
     // start search for inactive players -> async
@@ -2037,15 +2101,12 @@ function onLoadPage()
     if(/page=message/.test(location.href))
     {
         var fleetsDiv = document.getElementById('fleetsTab');
-        if (fleetsDiv && !totalRess.loading)
+        if (fleetsDiv && !main.reading)
         {
             log('start loading');
-            totalRess.loading = true;
+            main.start();
             try
             {
-                var combatReportAdded = false;
-                var recycleReportAdded = false;
-                var spyReportAdded = false;
                 var msgList = fleetsDiv.getElementsByClassName('msg');
                 if (msgList[0])
                 {
@@ -2055,39 +2116,26 @@ function onLoadPage()
                         if (msgList[i].getElementsByClassName('combatLeftSide')[0])
                         {
                             var combatReport = new CombatReport(msgList[i]);
-                            var add = totalRess.append(combatReport);
-                            combatReportAdded = combatReportAdded || add;
+                            main.combatReports.add(combatReport);
                         }
                         else // look for other reports
                         {
                             var apiKey = msgList[i].getAttribute('data-api-key');
                             if (apiKey && apiKey.startsWith('sr-'))
                             {
-                                spyReportAdded = spyReportAdded || readSpyReport(msgList[i]);
+                                readSpyReport(msgList[i]);
                             }
                             if (msgList[i].getElementsByClassName('planetIcon tf')[0])
                             {
-                                var collReport = new CollectingReport(msgList[i]);
-                                if (collReport.ressources)
-                                    recycleReportAdded = recycleReportAdded || totalRess.append(collReport);
+                                var recycleReport = new RecycleReport(msgList[i]);
+                                if (recycleReport.ressources)
+                                    main.recycleReports.add(recycleReport);
                             }
                         }
                     }
-                    if (spyReportAdded)
-                        spyReports.save();
-                    if (combatReportAdded || recycleReportAdded)
-                        checkRaidFinished();
-
-                    if (totalRess.inactivePlayersLength != spyReports.count())
-                    {
-                        totalRess.inactivePlayersLength = spyReports.count();
-                        totalRess.save();
-                        log('write inactive players');
-                    }
+                    main.stop();
                     result = true;
                 }
-                if (!combatReportAdded)
-                    totalRess.loading = false;
             }
             catch (ex)
             {
@@ -2106,12 +2154,9 @@ function readCombatReports(page)
         var isSpyReport = false;
         var collEnfants = document.getElementsByClassName('msg');
 
-        // 1 of 2 child are not of your bisness, and the first is the < << >> > button so start at 3 and +2
         for (var i = 0; i < collEnfants.length; i++)
         {
-            var msg = collEnfants[i];
-            var combatReport = new CombatReport(msg);
-            log(combatReport);
+            var combatReport = new CombatReport(collEnfants[i]);
             if (page == 1 && i === 0)
                 asyncHelper.lastCheck = combatReport.info.date;
 
@@ -2120,8 +2165,7 @@ function readCombatReports(page)
                 result = false;
                 break;
             }
-            //if (combatReport.attackerName != 'Unknown')
-            totalRess.append(combatReport);
+            main.combatReports.add(combatReport);
         }
     }
     catch(ex)
@@ -2135,7 +2179,7 @@ function readCombatReports(page)
 function readSpyReport(msg)
 {
     var report = new SpyReport(msg);
-    return spyReports.add(report);
+    return main.spyReports.add(report);
 }
 
 function readSpyReports(page)
@@ -2216,7 +2260,7 @@ function setStatus(msg)
     replaceElement(DIV_STATUS_GIF_ID, SPAN_STATUS_ID, span);
 }
 
-// initialize the script and load some informations from existing cookies
+// initialize the script and load some informations from Locale Storage
 function startScript()
 {
     try
@@ -2241,7 +2285,7 @@ function startScript()
         setInterval(onLoadPage, 400);
         display();
 
-
+        testIt();
     }
     catch(ex)
     {
@@ -2256,7 +2300,7 @@ function trim(string)
 
 function versionCheck()
 {
-    //settings.lastVersion = "3.3.0.16"; // debug test
+    //settings.lastVersion = "3.3.0.22"; // debug test
     if (settings.isNewVersion())
     {
         log('New Version detected!');
@@ -2268,25 +2312,6 @@ function versionCheck()
         else
             settings.write();
 
-        switch (VERSION_SCRIPT)
-        {
-            case "3.3.0.15":
-                // include new SpyReport Objects and the old inactive player list will not used anymore
-                spyReports.load();
-                totalRess.load();
-                settings.lastCheckCombatReport = getBashTimespan();
-                settings.lastCheckSpyReport = getBashTimespan();
-                break;
-            case "3.3.0.17":
-                totalRess.load();
-                spyReports.load();
-                for (var i = 0; i < totalRess.combatReports.length; i++)
-                {
-                    totalRess.combatReports[i].detailsLoaded(spyReports);
-                }
-                totalRess.save();
-                break;
-        }
     }
     else if (RESET_COOKIES) // for debug
     {
