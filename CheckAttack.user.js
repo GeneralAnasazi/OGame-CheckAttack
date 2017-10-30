@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.3.0.26
+// @version 3.3.0.27
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
@@ -28,13 +28,13 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to be set after an update
-const VERSION_SCRIPT = '3.3.0.26';
+const VERSION_SCRIPT = '3.3.0.27';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.3.0.23';
 
 // debug consts
 const DEBUG = true; // set it to true enable debug messages -> log(msg)
-const RESET_COOKIES = false;
+const RESET_COOKIES = true;
 
 
 /***** Global Vars ***********************************************************/
@@ -178,8 +178,8 @@ var main = {
     calc: function() {
         log('start calc');
         this.totalRessources.clear();
-        this.totalRessources.calcReports(this.combatReports.reports, getBashTimespan());
-        this.totalRessources.calcReports(this.recycleReports.reports, getBashTimespan());
+        this.totalRessources.calcReports(this.combatReports, getBashTimespan());
+        this.totalRessources.calcReports(this.recycleReports, getBashTimespan());
         this.totalRessources.calcTotal();
         this.totalRessources.save();
         calculateRess = false;
@@ -195,6 +195,8 @@ var main = {
         if (this.combatReports.saveToLocalStorage() || this.recycleReports.saveToLocalStorage() || calculateRess)
         {
             this.calc();
+            if (this.combatReports.updated)
+                this.combatReports.saveToLocalStorage();
         }
     },
     start: function() {
@@ -203,10 +205,16 @@ var main = {
     stop: function() {
         if (this.reading && this.combatReports.detailsLoadCount == -1)
         {
-            this.save();
             this.reading = false;
+            var spyReportUpdated = this.spyReports.updated;
+            var recycleOrCombatReportUpdated = this.combatReports.updated || this.recycleReports.updated;
             asyncHelper.clearAsync();
-            display();
+
+            if (spyReportUpdated || recycleOrCombatReportUpdated || calculateRess)
+            {
+                this.save();
+                display();
+            }
         }
     }
 };
@@ -588,6 +596,7 @@ function CombatReport(msg) {
         if (this.info.id && !this.details)
         {
             getMessageDetailsAsync(this.info.id);
+            main.combatReports.detailsLoadCount++;
         }
     };
     this.getFleetId = function() {
@@ -728,12 +737,12 @@ function CombatReportList() {
 		var result = this.reports.findIndex(el => el.info.equal(report.info)) == -1;
 		if (result)
 		{
+            log("combat report added");
             this.reports.push(report);
             this.updated = true;
             if (!report.details) // prevent loading details
             {
                 report.getDetails();
-                this.detailsLoadCount++;
             }
         }
         return result;
@@ -1011,6 +1020,7 @@ function ReportList(storageKey, deleteDate) {
             this.deleteOldReports(this._deleteDate);
             if (this.updated)
             {
+                log("save " + this._storageKey);
                 writeToLocalStorage(this, this._storageKey);
                 result = true;
             }
@@ -1428,15 +1438,23 @@ function TotalRessources() {
     /*** METHODS *********************/ {
         this.calcReports = function(reportList, date) {
             log('calcReports: ' + date);
-            for (var i = 0; i < reportList.length; i++)
+            for (var i = 0; i < reportList.reports.length; i++)
             {
-                if (reportList[i].info.date > date && reportList[i].ressourcesLoot)
+                var report = reportList.reports[i];
+                if (report.info.date > date && report.ressourcesLoot)
                 {
-					this.ressources.add(reportList[i].ressourcesLoot);
-                    if (reportList[i].ressourcesLost)
-                        this.lostRessources.add(reportList[i].ressourcesLost);
+					this.ressources.add(report.ressourcesLoot);
+                    if (report.ressourcesLost)
+                        this.lostRessources.add(report.ressourcesLost);
                     if (calculateRess)
-                        reportList[i].status = main.spyReports.getStatus(reportList[i]);
+                    {
+                        var state = main.spyReports.getStatus(report);
+                        if (state != report.status)
+                        {
+                            report.status = state;
+                            reportList.updated = true;
+                        }
+                    }
                 }
             }
             this.ressources.calcTotal();
@@ -1974,6 +1992,7 @@ function getMessageDetailsAsync(msgId) {
                                         var json = firstSplit.split("');")[0];
                                         main.combatReports.reports[idx].details = jQuery.parseJSON(json);
                                         main.combatReports.reports[idx].detailsLoaded(main.spyReports);
+                                        main.combatReports.updated = true;
                                     }
                                 }
                             }
@@ -1992,6 +2011,7 @@ function getMessageDetailsAsync(msgId) {
                 }
                 finally
                 {
+                    log("details loaded: " + main.combatReports.detailsLoadCount);
                     main.stop();
                 }
             }
