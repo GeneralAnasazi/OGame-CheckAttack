@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.3.0.24
+// @version 3.3.0.25
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
@@ -28,7 +28,7 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to be set after an update
-const VERSION_SCRIPT = '3.3.0.24';
+const VERSION_SCRIPT = '3.3.0.25';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.3.0.23';
 
@@ -725,12 +725,12 @@ function CombatReportList() {
     this.detailsLoadCount = -1;
 
     this.add = function(report) {
-		var result = this.reports.findIndex(el => el.info.equal(report.info)) == -1;
+		var result = this.reports.findIndex(el => el.info.equal(report.info)) === -1;
 		if (result)
 		{
             this.reports.push(report);
             this.updated = true;
-            if (!report.details)
+            if (!report.details) // prevent loading details
             {
                 report.getDetails();
                 this.detailsLoadCount++;
@@ -764,7 +764,7 @@ function CombatReportList() {
 		{
 			var report = new CombatReport();
 			report.setValues(obj.reports[i]);
-			this.add(report);
+			this.reports.push(report);
 		}
 	};
 
@@ -873,8 +873,8 @@ function ReportInfo(msg) {
     this.moon = false;
     /***** METHODS *****/ {
     this.equal = function(info) {
-        return this.coord == info.coord && this.date.getTime() == info.date.getTime() &&
-            this.moon == info.moon;
+        return this.coord === info.coord && this.date.getTime() === info.date.getTime() &&
+            this.moon === info.moon;
     };
     this.parseMessage = function(msg) {
         if (msg)
@@ -1413,7 +1413,7 @@ function SpyReportList() {
         {
             var report = new SpyReport();
             report.setValues(obj.reports[i]);
-            this.add(report);
+            this.reports.push(report);
         }
     };}
 }
