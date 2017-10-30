@@ -34,7 +34,7 @@ const VERSION_SCRIPT_RESET = '3.3.0.23';
 
 // debug consts
 const DEBUG = true; // set it to true enable debug messages -> log(msg)
-const RESET_COOKIES = true;
+const RESET_COOKIES = false;
 
 
 /***** Global Vars ***********************************************************/
