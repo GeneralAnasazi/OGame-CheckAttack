@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.3.0.28
+// @version 3.3.0.29
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
@@ -28,7 +28,7 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to be set after an update
-const VERSION_SCRIPT = '3.3.0.28';
+const VERSION_SCRIPT = '3.3.0.29';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.3.0.28';
 
@@ -1441,18 +1441,27 @@ function TotalRessources() {
             for (var i = 0; i < reportList.reports.length; i++)
             {
                 var report = reportList.reports[i];
-                if (report.info.date > date && report.ressourcesLoot)
+                if (report.info.date > date)
                 {
-					this.ressources.add(report.ressourcesLoot);
-                    if (report.ressourcesLost)
-                        this.lostRessources.add(report.ressourcesLost);
-                    if (calculateRess)
+                    var ress = null;
+                    if (report.details && report.ressourcesLoot)
+                        ress = report.ressourcesLoot;
+                    else
+                        ress = report.ressources;
+
+                    if (ress)
                     {
-                        var state = main.spyReports.getStatus(report);
-                        if (state != report.status)
+                        this.ressources.add(ress);
+                        if (report.ressourcesLost)
+                            this.lostRessources.add(report.ressourcesLost);
+                        if (calculateRess)
                         {
-                            report.status = state;
-                            reportList.updated = true;
+                            var state = main.spyReports.getStatus(report);
+                            if (state != report.status)
+                            {
+                                report.status = state;
+                                reportList.updated = true;
+                            }
                         }
                     }
                 }
