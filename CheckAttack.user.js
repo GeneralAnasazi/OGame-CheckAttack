@@ -199,8 +199,9 @@ var main = {
         result.addRange(this.recycleReports);
         log(result);
         if (info) {
-            var filterFunc = el => el.info && el.info.date.getTime() > info.date.getTime() && 
-                                   el.info.coord == info.coord && el.info.moon == info.moon;
+            var filterFunc = el =>  el.info && el.info.date.getTime() > info.date.getTime() && 
+                                    el.info.coord == info.coord && (el.info.moon == info.moon ||
+                                    el.defenderName == undefined);
             result.filterReports(filterFunc);
         }
         return result;
