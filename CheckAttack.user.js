@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.3.0.29
+// @version 3.3.0.30
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
@@ -17,18 +17,20 @@
 "use moz";
 
 
-/***** CONSTANTS *************************************************************/
+//#region  CONSTANTS
+
 const COOKIE_EXPIRES_DAYS = 1;
 const ERROR = 'Error';
 const TABID_SPY_REPORT = 20;
 const TABID_COMBAT_REPORT = 21; // combat report
 
+const DIV_DIALOG_PLACEHOLDER = "id_check_attack_dialog_div";
 const DIV_STATUS_GIF_ID = "id_check_attack_status_div";
 const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to be set after an update
-const VERSION_SCRIPT = '3.3.0.29';
+const VERSION_SCRIPT = '3.3.0.30';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.3.0.28';
 
@@ -36,12 +38,14 @@ const VERSION_SCRIPT_RESET = '3.3.0.28';
 const DEBUG = true; // set it to true enable debug messages -> log(msg)
 const RESET_COOKIES = false;
 
+//#endregion
 
-/***** Global Vars ***********************************************************/
+//#region  Global Vars
 var test = false;
 
 // globale vars
 var calculateRess = false;
+var divDialogPlaceholder = createDiv(DIV_DIALOG_PLACEHOLDER);
 var language = document.getElementsByName('ogame-language')[0].content;
 var playerName = document.getElementsByName('ogame-player-name')[0].content;
 var sendFleetList = new SendFleetList();
@@ -52,11 +56,15 @@ var captionAttack = "attaque";
 var captionAttacks = "attaques";
 var loadStatusCR = "loading CR";
 var loadStatusSR = "loading SR";
+var settingsDialogCaption = "Optionen";
 var title1 = "Pas de risque";
 var title2 = "de bash";
 var title3 = "Risque de bash";
+var confirmResetData = "Wollen sie wirklich die gespeicherten Daten zurück setzen?";
 
-/***** ENUMERATIONS ***********************************************************/
+//#endregion
+
+//#region ENUMERATIONS
 
     var bashState = {
         UNDECLARED: -999,
@@ -111,8 +119,9 @@ var title3 = "Risque de bash";
         INTERPLANETARY_ROCKET: 503
     };
 
-/***** Objects ****************************************************************/
+//#endregion
 
+//#region global Objects
 // async object
 var asyncHelper = {
     currentPage: -1,
@@ -183,6 +192,19 @@ var main = {
         this.totalRessources.calcTotal();
         this.totalRessources.save();
         calculateRess = false;
+    },
+    getRessourceReports: function(info) {
+        var result = new ReportList();
+        result.addRange(this.combatReports);
+        result.addRange(this.recycleReports);
+        log(result);
+        if (info) {
+            var filterFunc = el =>  el.info && el.info.date.getTime() > info.date.getTime() && 
+                                    el.info.coord == info.coord && (el.info.moon == info.moon ||
+                                    el.defenderName == undefined);
+            result.filterReports(filterFunc);
+        }
+        return result;
     },
     load: function() {
         this.combatReports.loadFromLocalStorage();
@@ -328,6 +350,7 @@ var settings = {
     }
 }; // cookie tabSettings
 
+//#region unitCosts
 var unitCosts = {};
 unitCosts[unitIds.LITLE_TRANSPORTER] = {metal: 2000, crystal: 2000, deuterium: 0};
 unitCosts[unitIds.BIG_TRANSPORTER] = {metal: 6000, crystal: 6000, deuterium: 0};
@@ -352,8 +375,11 @@ unitCosts[unitIds.LITLE_SHIELD_DOME] = {metal: 10000, crystal: 10000, deuterium:
 unitCosts[unitIds.BIG_SHIELD_DOME] = {metal: 50000, crystal: 50000, deuterium: 0};
 unitCosts[unitIds.INTERCEPTOR_ROCKET] = {metal: 8000, crystal: 0, deuterium: 2000};
 unitCosts[unitIds.INTERPLANETARY_ROCKET] = {metal: 12500, crystal: 2500, deuterium: 10000};
+//#endregion
 
-/***** prototype functions ****************************************************************/
+//#endregion
+
+//#region prototype functions
 
 Date.prototype.addMSecs = function(msecs) {
     this.setTime(this.getTime() + msecs);
@@ -365,7 +391,19 @@ Date.prototype.addHours = function(hours) {
     return this;
 };
 
-/***** CONSTRUCTORS ***********************************************************/
+String.prototype.replaceAll = function (searchStr, replacement)
+{
+    return this.split(searchStr).join(replacement);
+};
+
+String.prototype.trim = function (string)
+{
+    return this.replace(/(^\s*)|(\s*$)/g,'');
+};
+
+//#endregion
+
+//#region CONSTRUCTORS
 
 function Attacks(combatReport) {
     /***** PROPERTIES *****/
@@ -408,10 +446,19 @@ function Attacks(combatReport) {
         this.moon = attack.moon;
     };
     this.toHtml = function() {
-        var defenderSpan = '<span style="font-weight: bold; color: grey;display: inline-block;float: center;text-align: center">' + this.defenderName + '</span>';
+        // create an object for later use
+        var obj = {};
+        obj.date = getBashTimespan();
+        obj.defenderName = this.defenderName;
+        obj.coord = this.coord;
+        obj.moon = this.moon;
+        var json = JSON.stringify(obj).replaceAll('"', '&quot;');
+
+        var defenderSpan = '<span style="font-weight: bold; color: grey;display: inline-block;float: center;text-align: center" data-info="'+json+'">' + this.defenderName + '</span>';
+        var btn = createButton(defenderSpan, "attackTrackerButton");
         if (this.moon)
             defenderSpan += '<img src="https://github.com/GeneralAnasazi/OGame-CheckAttack/raw/master/Moon.gif" style="height: 14px; width: 14px;float: right;">';
-        return '<a title="' + this.getTimesStr() + ' (time in UTC)" href="' + coordToUrl(this.coord)+'" style="display: inline-block;width: 58px;text-align: left">' + this.coord + '</a>' + defenderSpan + '<br/>';
+        return '<a title="' + this.getTimesStr() + ' (time in UTC)" href="' + coordToUrl(this.coord)+'" style="display: inline-block;width: 58px;text-align: left">' + this.coord + '</a>' + btn.outerHTML + '<br/>';
     };
 
     // on create
@@ -483,16 +530,15 @@ function AttackTracker() {
 }
 
 function CombatReport(msg) {
+    Report.call(this); // inherited
     this.attackerName = 'Unknown';
     this.debrisField = 0;
     this.defenderInactive = false;
     this.defenderName = 'Unknown';
     this.details = null;
     this.fleetIds = null;
-    this.info = null;
     this.isAttacker = null;
     this.isDefender = null;
-    this.ressources = null;
     this.ressourcesLoot = null;
     this.ressourcesLost = null;
     this.status = bashState.UNDECLARED;
@@ -574,24 +620,6 @@ function CombatReport(msg) {
         this.status = spyReportList.getStatus(this);
         this.defenderInactive = this.status == bashState.INACTIVE_PLAYER;
     };
-    this.getDefender = function(msg) {
-        // get Defender
-        var result = 'Unknown';
-
-        var defenderDiv = msg.getElementsByClassName('combatRightSide');
-        if (defenderDiv[0])
-        {
-            var toolTip = defenderDiv[0].getElementsByClassName('msg_ctn msg_ctn2 overmark tooltipRight')[0];
-            if (!toolTip)
-                toolTip = defenderDiv[0].getElementsByClassName('msg_ctn msg_ctn2 undermark tooltipRight')[0];
-            if (toolTip)
-            {
-                result = toolTip.innerHTML;
-                result = result.split(': ')[1].replace('(', '').replace(')', '');
-            }
-        }
-        return trim(result);
-    };
     this.getDetails = function() {
         if (this.info.id && !this.details)
         {
@@ -630,6 +658,29 @@ function CombatReport(msg) {
         }
         return result;
     };
+    this.getCombatInfo = function(msg, className) {
+        var result = 'Unknown';
+
+        var div = msg.getElementsByClassName(className)[0];
+        if (div)
+        {
+            var combatInfo = div.getElementsByClassName('msg_ctn');
+            if (combatInfo[0])
+            {
+                var name = combatInfo[0].innerHTML;
+                result = name.split(': ')[1].replace('(', '').replace(')', '').trim();
+                if (combatInfo.length > 2)
+                {
+                    if (className == "combatLeftSide")
+                    {
+                        this.ressources = new Ressources(combatInfo[1]);
+                        this.debrisField = extractRess(combatInfo[2].innerHTML);
+                    }
+                }
+            }
+        }
+        return result;
+    };
     this.isBash = function() {
         //TODO: exclude uni with espionage attacks
         return parseInt(this.status) > parseInt(bashState.ESPIONAGE_NO_DETAILS);
@@ -641,23 +692,11 @@ function CombatReport(msg) {
             if (msg)
             {
                 this.info = new ReportInfo(msg);
-                this.defenderName = this.getDefender(msg);
+                this.defenderName = this.getCombatInfo(msg, "combatRightSide");
                 if (this.defenderName == playerName)
                     this.isDefender = true;
 
-                var combatLeftSide = msg.getElementsByClassName('combatLeftSide')[0];
-                if (combatLeftSide && this.defenderName != 'Unknown')
-                {
-                    //TODO: Bei über einer Million werden die Daten abgeschnitten -> Bug fix
-                    var spanList = combatLeftSide.getElementsByTagName('span');
-                    if (spanList[0] && spanList.length > 2) //attacker
-                    {
-                        var arr = spanList[0].innerHTML.split(': ');
-                        this.attackerName = trim(arr[1].replace('(', '').replace(')', ''));
-                        this.ressources = new Ressources(spanList[1]);
-                        this.debrisField = extractRess(spanList[2].innerHTML);
-                    }
-                }
+                this.attackerName = this.getCombatInfo(msg, "combatLeftSide");
             }
         }
         catch (ex)
@@ -694,23 +733,17 @@ function CombatReport(msg) {
         return result;
     };
     this.setValues = function(obj) {
-		if (obj.attackerName)
-			this.attackerName = trim(obj.attackerName);
+        this._setValues(obj);
+        if (obj.attackerName)
+			this.attackerName = obj.attackerName.trim();
         this.debrisField = obj.debrisField;
         this.defenderInactive = obj.defenderInactive;
 		if (obj.defenderName)
-	        this.defenderName = trim(obj.defenderName);
+	        this.defenderName = obj.defenderName.trim();
         this.details = obj.details;
         this.fleetIds = obj.fleetIds;
-        this.info = new ReportInfo();
-        this.info.setValues(obj.info);
         this.isAttacker = obj.isAttacker;
         this.isDefender = obj.isDefender;
-        if (obj.ressources)
-        {
-            this.ressources = new Ressources();
-            this.ressources.setValues(obj.ressources);
-        }
         if (obj.ressourcesLost)
         {
             this.ressourcesLost = new Ressources();
@@ -727,6 +760,8 @@ function CombatReport(msg) {
     if (msg)
         this.load(msg);
 }
+CombatReport.prototype = Object.create(Report.prototype);
+CombatReport.prototype.constructor = CombatReport;
 
 function CombatReportList() {
 	ReportList.call(this, 'CombatReportList', getBashTimespan(-6 * 24 * 60)); // 7 days are stored
@@ -776,7 +811,6 @@ function CombatReportList() {
 			this.reports.push(report);
 		}
 	};
-
 }
 CombatReportList.prototype = Object.create(ReportList.prototype);
 CombatReportList.prototype.constructor = CombatReportList;
@@ -862,7 +896,27 @@ function Report() {
 	this.info = null;
 	this.ressources = undefined; // can be used (have a look for super -> call)
 
-	//pseudo private
+    this.getRow = function() {
+        var ress = new Ressources();
+        if (this.ressourcesLoot)
+            ress.add(this.ressourcesLoot);
+        else
+            ress.add(this.ressources);
+        ress.dec(this.ressourcesLost);
+        
+        var name = "";
+        if (this.defenderName)
+            name = this.defenderName;
+        var coord = "";
+        var date = "";
+        if (this.info)
+        {
+            coord = this.info.coord;
+            date = formatDate(this.info.date);
+        }
+        return '<tr><td>'+name+'</td><td>'+coord+'</td><td>'+date+'</td><td>'+ress.metal.toLocaleString()+'</td><td>'+ress.crystal.toLocaleString()+'</td><td>'+ress.deuterium.toLocaleString()+'</td></tr>';
+    };
+	//pseudo private => implemented to use it for an inhertited function
     this._setValues = function(report) {
         this.info = new ReportInfo();
         this.info.setValues(report.info);
@@ -980,7 +1034,7 @@ function ReportList(storageKey, deleteDate) {
 		{
 			for (var i = 0; i < reportList.reports.length; i++)
 			{
-				this.updated = this.updated || this.add(reportList.reports[i]);
+				this.reports.push(reportList.reports[i]);
 			}
 		}
 	};
@@ -991,6 +1045,30 @@ function ReportList(storageKey, deleteDate) {
     this.count = function() { return this.reports.length; };
     this.deleteOldReports = function(date) {
         deleteOldReports(this.reports, date);
+    };
+    this.filterReports = function(filterFunc) {
+        this.reports = this.reports.filter(filterFunc);
+    };
+    this.groupeBy = function(keys) {
+        var i = 0, val, index,
+        values = [], result = [];
+        for (; i < this.reports.length; i++) 
+        {
+            val = "";
+            for (var j = 0; j < keys.length; j++)
+            {
+                val += this.reports[i][keys[j]];
+            }
+            index = values.indexOf(val);
+            if (index > -1)
+                result[index].push(this.reports[i]);
+            else {
+                values.push(val);
+                result.push([this.reports[i]]);
+            }
+        }
+        return result;
+
     };
 	this.loadFromLocalStorage = function() {
 		if (this._storageKey)
@@ -1028,6 +1106,62 @@ function ReportList(storageKey, deleteDate) {
         }
         return result;
     };
+    this.show = function(filterFunc, title) {
+        var reports = this.reports;
+        if (filterFunc)
+            reports = reports.filter(filterFunc);
+        var rows =  '<thead><tr><th>Name</th><th>Coord</th><th>Date</th><th>Metal</th><th>Crystal</th><th>Deuterium</th></tr></thead>' + 
+                    '<tbody">';
+                    
+        var total = new CombatReport();
+        total.defenderName = "Total";
+        total.ressources = new Ressources();
+        for (var i = 0; i < reports.length; i++)
+        {
+            rows += reports[i].getRow();
+            if (!reports[i].ressourcesLoot)
+                total.ressources.add(reports[i].ressources);
+            total.ressources.add(reports[i].ressourcesLoot);
+            total.ressources.dec(reports[i].ressourcesLost);
+        }
+        rows += '</tbody><tfoot>';
+        rows += total.getRow();
+        rows += '</tfoot>';
+        var aTitle = "Reports";
+        if (!aTitle)
+            aTitle = title;
+        showDialog(aTitle, '<div class="datagrid"><table class="scroll">'+rows+'</table></div>');
+
+        if (!test)
+            return;
+        try
+        {
+            var $table = $('table.scroll'),
+            $bodyCells = $table.find('tbody tr:first').children(),
+            colWidth;
+            // Get the tbody columns width array
+            colWidth = $bodyCells.map(function() {
+                return $(this).width();
+            }).get();
+            
+            // Set the width of thead columns
+            $table.find('thead tr').children().each(function(i, v) {
+                if (i != colWidth.length - 1)
+                    $(v).width(colWidth[i]);
+            });    
+
+            $table.find('tfoot tr').children().each(function(i, v) {
+                if (i != colWidth.length - 1)
+                    $(v).width(colWidth[i]);
+                else
+                    $(v).width(colWidth[i] + 23);
+            });
+        }
+        catch(ex)
+        {
+            console.log('Error on CombatReportList.show: ' + ex);
+        }
+    };
     this.sortByDateDesc = function() {
         this.reports.sort(compareByDate);
     };
@@ -1040,12 +1174,13 @@ function Ressources(span) {
     this.total = 0;
 
     this.add = function(ress, multiplier) {
+        if (!ress) return;
         if (!multiplier)
             multiplier = 1;
         this.metal += ress.metal * multiplier;
         this.crystal += ress.crystal * multiplier;
         this.deuterium += ress.deuterium * multiplier;
-        //this.total += ress.total;
+        this.calcTotal();
     };
     this.calcTotal = function() {
         this.total = this.metal + this.crystal + this.deuterium;
@@ -1055,6 +1190,15 @@ function Ressources(span) {
         this.crystal = 0;
         this.deuterium = 0;
         this.total = 0;
+    };
+    this.dec = function(ress) {
+        if (ress)
+        {
+            this.metal -= ress.metal;
+            this.crystal -= ress.crystal;
+            this.deuterium -= ress.deuterium;
+            this.calcTotal();
+        }
     };
     this.load = function(span) {
         if (span && span.innerHTML)
@@ -1310,21 +1454,21 @@ function SpyReport(msg) {
         if (inactiveSpan)
         {
             //read player name
-            this.playerName = trim(inactiveSpan.textContent);
+            this.playerName = inactiveSpan.textContent.trim();
             this.inactive = true;
         }
         else // active
         {
             var activeSpan = msg.getElementsByClassName('status_abbr_active')[0];
             if (activeSpan)
-                this.playerName = trim(activeSpan.textContent);
+                this.playerName = activeSpan.textContent.trim();
         }
     };
     this.setValues = function(report) {
         this._setValues(report);
         this.inactive = report.inactive;
 		if (report.playerName)
-			this.playerName = trim(report.playerName);
+			this.playerName = report.playerName.trim();
     };}
 
     // read informations from param(s)
@@ -1333,7 +1477,6 @@ function SpyReport(msg) {
 }
 SpyReport.prototype = Object.create(Report.prototype);
 SpyReport.prototype.constructor = RecycleReport;
-
 
 function SpyReportList() {
     ReportList.call(this, 'SpyReportList', getBashTimespan(-60));
@@ -1444,12 +1587,12 @@ function TotalRessources() {
                 if (report.info.date > date)
                 {
                     var ress = null;
-                    if (report.details && report.ressourcesLoot)
+                    if (report.details && report.ressourcesLoot) // combatReports
                         ress = report.ressourcesLoot;
                     else
-                        ress = report.ressources;
+                        ress = report.ressources; // recycleReports
 
-                    if (ress)
+                    if (ress) // exclude all reports with no ressources
                     {
                         this.ressources.add(ress);
                         if (report.ressourcesLost)
@@ -1509,42 +1652,23 @@ function TotalRessources() {
     }
 }
 
-/***** SCRIPT METHODS *********************************************************************/
+//#endregion
+
+//#region SCRIPT METHODS
 
 function testIt() {
     if (test)
     {
         try
         {
-            main.calc();
-            settings.lastCheckCombatReport = getBashTimespan();
-            settings.lastCheckSpyReport = getBashTimespan();
+            //show Dialog
+            //main.combatReports.show(el => el.defenderName == 'Nimrod');
+            log(main.combatReports.groupeBy(["defenderName"], el => el.defenderName == val.defenderName));
         }
         catch (ex)
         {
             console.log("Error Test Function: " + ex);
         }
-    }
-}
-
-//TODO: translation new vars
-// translate the viewed vars
-function translate()
-{
-    switch (language)
-    {
-        case 'de':
-            setTranslationVars('Verlauf des Risikos', 'jmd. zu Bashen', 'Risiko jmd. zu Bashen', 'Angriff', 'Angriffe');
-            break;
-        case 'en':
-            setTranslationVars('Way to risk', 'to bash', 'Risk to bash', 'attack', 'attacks');
-            break;
-        case 'fr':
-            setTranslationVars('Pas de risque', 'de bash', 'Risque de bash', 'attaque', 'attaques');
-            break;
-        default:
-            setTranslationVars('Way to risk', 'to bash', 'Risk to bash', 'attack', 'attacks');
-            break;
     }
 }
 
@@ -1555,22 +1679,51 @@ function log(msg)
         console.log(msg);
 }
 
-function setTranslationVars(aTitle1, aTitle2, aTitle3, aCaptionAttack, aCaptionAttacks)
-{
-    title1 = aTitle1;
-    title2 = aTitle2;
-    title3 = aTitle3;
-    captionAttack = aCaptionAttack;
-    captionAttacks = aCaptionAttacks;
-}
-
 function addCssLink(url)
 {
     var link = document.createElement('link');
     link.setAttribute('rel', 'stylesheet');
-    link.setAttribute('type', 'text/css .css');
+    link.setAttribute('type', 'text/css');
     link.setAttribute('href', url);
-    document.getElementsByTagName('head')[0].appendChild(link);
+    document.head.appendChild(link);
+}
+
+function addCssStyles()
+{
+    var style = document.createElement("style");
+    style.type = "text/css";
+
+    var tableStyle =    ".datagrid table { border-collapse: collapse; text-align: left; width: 100%; " + (test ? "" : "overflow: auto; ") + "} " +
+                        ".datagrid {font: normal 12px/150% Arial, Helvetica, sans-serif; background: #fff; border: 1px solid #006699; -webkit-border-radius: 3px; -moz-border-radius: 3px; border-radius: 3px; }" +
+                        ".datagrid table td, .datagrid table th { padding: 3px 10px; min-width: 50px; }" + 
+                        ".datagrid table thead, .datagrid table tfoot { " + (test ? "display: block; " : "") + "width: 100% }" +
+                        ".datagrid table thead th, .datagrid table tfoot td { background:-webkit-gradient( linear, left top, left bottom, color-stop(0.05, #006699), color-stop(1, #00557F) );background:-moz-linear-gradient( center top, #006699 5%, #00557F 100% );filter:progid:DXImageTransform.Microsoft.gradient(startColorstr='#006699', endColorstr='#00557F');background-color:#006699; color:#FFFFFF; font-size: 14px; font-weight: bold; border-left: 1px solid #0070A8; } " +
+                        ".datagrid table tfoot { width: 100%} " +
+                        //".datagrid table thead th:first-child { border: none; }" +
+                        //".datagrid table tfoot td:first-child { border: none; }" +
+                        ".datagrid table tbody td { color: #00496B; border-left: 1px solid #E1EEF4; font-size: 12px;font-weight: normal; }" +
+                        ".datagrid table tbody .alt td { background: #E1EEF4; color: #00496B; }" +
+                        ".datagrid table tbody tr:last-child td { border-bottom: none; }" +
+                        ".datagrid table tbody { overflow-y: auto; min-height: 40px; max-height: 300px; " + (test ? "display: block; " : "") + "}";
+
+    var toolbarStyle =  ".checkAttack-toolbar {width: 100%; background-color: #555; overflow: auto;}" +
+                        ".checkAttack-toolbar a {float: left; width: 20px; height: 20px; text-align: center; padding: 3px 0; transition: all 0.3s ease; color: white; font-size: 12px; display: inline-block;}" +
+                        ".checkAttack-toolbar i:hover {background-color: #000;}" +
+                        ".checkAttack-toolbar-active {background-color: #4CAF50 !important;}";
+
+    var a_tooltipStyle ="a.tip { border-bottom: 1px dashed; text-decoration: none }" +
+                        "a.tip:hover { cursor: help; position: relative }" +
+                        "a.tip span { display: none }" +
+                        "a.tip:hover span { border: #c0c0c0 1px dotted; padding: 5px 20px 5px 5px; display: block; z-index: 100; left: 0px; margin: 10px; width: 250px; position: absolute; top: 10px; text-decoration: none }";
+    style.innerHTML = tableStyle + toolbarStyle + a_tooltipStyle;
+    document.head.appendChild(style);
+
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.innerHTML = '$(function() { $( "#dialogCheckAttack" ).draggable(); });';
+    document.head.appendChild(script);
+
+    //addCssLink("https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css");
 }
 
 function addEventSendFleet(fleetPage)
@@ -1589,6 +1742,8 @@ function addEventSendFleet(fleetPage)
 
 function addEventListenersToPage()
 {
+    if (!test)
+        return;
     if(/page=fleet3/.test(location.href))
         addEventSendFleet(3);
     else if(/page=fleet2/.test(location.href))
@@ -1658,8 +1813,17 @@ function compareByDate(left, right) {
 
 function compareVersion(version1, version2)
 {
-    var diff = parseInt(replaceAll(version1, '.', '')) - parseInt(replaceAll(version2, '.', ''));
+    var diff = parseInt(version1.replaceAll( '.', '')) - parseInt(version2.replaceAll('.', ''));
     return  diff < 0 ? -1 : diff > 0 ? 1 : 0;
+}
+
+function createButton(innerHtml, className)
+{
+    var btn = document.createElement("a");
+    btn.innerHTML = innerHtml;
+    btn.className = className;
+    btn.href = "javascript:"; // i don't like href="#" it can make the page moving
+    return btn;
 }
 
 function createDiv(id, className)
@@ -1688,6 +1852,32 @@ function createSpanStatus(msg)
     if (msg.includes(ERROR))
         span.style.color = 'red';
     return span;
+
+
+}
+
+function createToolbar(parent, icons)
+{
+    if (!test)
+        return;
+
+    function addIcon(parent, icon) {
+        var a = document.createElement('a');
+        a.title = icon.description;
+        a.href = "javascript:";
+        a.innerHTML = icon.name;
+        parent.appendChild(a);
+        if (icon.click)
+        {
+            a.addEventListener("click", icon.click, false);
+        }
+        return a;
+    }
+    var div = createDiv('checkAttack_Toolbar', 'checkAttack-toolbar');
+    for (var i = 0; i < icons.length; i++) {
+        addIcon(div, icons[i]);
+    }
+    parent.appendChild(div);
 }
 
 function deleteOldReports(reportList, lastDate)
@@ -1718,8 +1908,9 @@ function display() {
         var attackTracker = main.combatReports.getAttacks();
         var coordByNbAttaque = {};
         var isGood =true;
+        var i;
 
-        for (var i = 0; i < attackTracker.attacks.length; i++)
+        for (i = 0; i < attackTracker.attacks.length; i++)
         {
             var attack = attackTracker.attacks[i];
             if (!coordByNbAttaque[attack.count])
@@ -1735,7 +1926,7 @@ function display() {
         }
 
         //linear-gradient(to bottom, #959595 0%,#0d0d0d 10%,#010101 70%,#0a0a0a 80%,#4e4e4e 90%,#383838 95%,#1b1b1b 100%)
-        var htmlCount = '<div class="textCenter" style="font-weight: bold; background: linear-gradient(to bottom, #959595 0%,#0d0d0d 7%,#010101 85%,#0a0a0a 91%,#4e4e4e 93%,#383838 97%,#1b1b1b 100%);' +
+        var htmlCount = '<div id="checkAttackTitle" class="textCenter" style="font-weight: bold; background: linear-gradient(to bottom, #959595 0%,#0d0d0d 7%,#010101 85%,#0a0a0a 91%,#4e4e4e 93%,#383838 97%,#1b1b1b 100%);' +
             'border: 2px solid black; border-radius: 5px; padding: 1px; text-align: center; color: #4f85bb; height:38px; display: block; font-size: 14px; padding: 7px;">';
         if ( isGood )
         {
@@ -1789,8 +1980,30 @@ function display() {
         info.style.border = '1px solid black';
         info.innerHTML=htmlCount;
 
+        createToolbar(info, [
+            {name: '<i class="icon_movement_reserve" />', description: "Kampfberichte", click: function() {main.combatReports.show(null, this.description); }},
+            {name: '<img src="https://gf2.geo.gfsrv.net/cdndd/3ca961edd69ea535317329e75b0e13.gif" width="20px" height="20px" />', description: "Trümmerfelder", click: function() {main.recycleReports.show(null, this.description); }}
+        ]);
         replaceElement(LINKS_TOOLBAR_BUTTONS_ID, DIV_STATUS_ID, info);
 
+        var buttonList = document.getElementsByClassName("attackTrackerButton");
+        for (i = 0; i < buttonList.length; i++)
+        {
+            buttonList[i].addEventListener('click', function(event){ 
+                var sourceElement = event.srcElement || event.target || {};
+                var attr = sourceElement.getAttribute("data-info");
+                if (attr)
+                {
+                    var info = JSON.parse(attr.replaceAll('&quote;', '"'));
+                    info.date = getBashTimespan();
+                    var reportList = main.getRessourceReports(info);
+                    reportList.show(null, "Raid Ressources " + info.defenderName);
+                }
+                else
+                    main.combatReports.show(el => el.defenderName == sourceElement.innerText);
+            }, false);
+        }
+        
         // insert a Div as a placeholder to increase the scrollbar range, if needed
         var rect = info.getBoundingClientRect();
         var contentDiv = document.getElementById('contentWrapper');
@@ -1829,11 +2042,11 @@ function displayLoadingGif()
 function extractRess(res)
 {
     if (/, /.test(res))
-        res =trim(res.split(', ')[0]);
+        res =res.split(', ')[0].trim();
     if(/:/.test(res))
-        res =trim(res.split(':')[1]);
+        res =res.split(':')[1].trim();
     else
-        res=trim(res);
+        res=res.trim();
 
 
     if(/^[0-9]{1,3}\.[0-9]{3}$/.test(res))
@@ -1857,6 +2070,17 @@ function flatten(obj) {
     return result;
 }
 
+function formatDate(d)
+{
+    return        [(getNumberLeadingZeros(d.getDate(), 2),
+                    getNumberLeadingZeros(d.getMonth()+1), 2),
+                    d.getFullYear()].join('-') +
+                    ' ' +
+                  [ getNumberLeadingZeros(d.getHours(), 2),
+                    getNumberLeadingZeros(d.getMinutes(), 2),
+                    getNumberLeadingZeros(d.getSeconds(), 2)].join(':');
+}
+
 function getBashTimespan(addMinutes)
 {
     var date = new Date();
@@ -1864,6 +2088,14 @@ function getBashTimespan(addMinutes)
     if (addMinutes)
         date.setTime(date.getTime() + addMinutes * 60 * 1000);
     return date;
+}
+
+function getLabeledInput(id, caption, value, readonly)
+{
+    var readonlyHtml = '';
+    if (readonly)
+        readonlyHtml = 'readonly';
+    return '<p style="padding: 8px"><label for="' + id + '">' + caption + '</label><input id="' + id + '" type="text" value="' + value + '" ' + readonlyHtml + '/></p>';
 }
 
 function getMaxPage()
@@ -1874,6 +2106,16 @@ function getMaxPage()
     if (li)
         result = li.getAttribute("data-page");
     return result;
+}
+
+function getNumberLeadingZeros(n, length)
+{
+    var len = String(n).length;
+    var leadingZeros = length + len;
+    var str = n;
+    for (var i = len; i < length; i++)
+        str = "0" + str;
+    return str;
 }
 
 // loading the page async from the server
@@ -2038,6 +2280,11 @@ function getSpanHtml(innerHtml, attributes) {
         result += ' ' + attributes;
     result += '>' + innerHtml + '</span>';
     return result;
+}
+
+function getTooltip(innerHtml)
+{
+    return '<span class="tooltip tooltipRight tooltipClose" title="<div class=&quot;htmlTooltip&quot;>' + innerHtml + '</div>"</span>';
 }
 
 //local storage functions
@@ -2244,12 +2491,6 @@ function readSpyReports(page)
     return result;
 }
 
-//TODO: create prototype
-function replaceAll(str, searchStr, replacement)
-{
-    return str.split(searchStr).join(replacement);
-}
-
 function replaceElement(idParent, idElement, element)
 {
     var link = document.getElementById(idParent);
@@ -2291,26 +2532,99 @@ function setStatus(msg)
     replaceElement(DIV_STATUS_GIF_ID, SPAN_STATUS_ID, span);
 }
 
-// initialize the script and load some informations from Locale Storage
+function setTranslationVars(aTitle1, aTitle2, aTitle3, aCaptionAttack, aCaptionAttacks)
+{
+    title1 = aTitle1;
+    title2 = aTitle2;
+    title3 = aTitle3;
+    captionAttack = aCaptionAttack;
+    captionAttacks = aCaptionAttacks;
+}
+
+/** show a dialog with the given informations */
+function showDialog(title, dialogHtml)
+{
+    try
+    {
+        var div = createDiv("dialogCheckAttack", "ui-dialog ui-widget ui-widget-content ui-corner-all ui-front ui-draggable");
+        div.setAttribute("role", "dialog");
+        div.setAttribute("tabindex", "-1");
+        div.setAttribute("aria-describedby", "ui-id-1031");
+        div.setAttribute("aria-labelledby", "ui-id-1032");
+
+        var contentWrapper = document.getElementById("id_check_attack").getBoundingClientRect();
+        var doc = document.documentElement;
+        var top = contentWrapper.top + doc.scrollTop;
+        div.style = "height: auto; width: auto; min-width: 200px; top: " + top + "px; left: " + (contentWrapper.left + contentWrapper.width + 10) + "px;";
+        var html =  '<div class="ui-dialog-titlebar ui-widget-header ui-corner-all ui-helper-clearfix ui-draggable-handle">';
+        html += '<span id="ui-id-1032" class="ui-dialog-title">' + title +'</span><button id="btnCloseDialogCheckAttack" type="button" class="ui-button ui-widget ui-state-default ui-corner-all ui-button-icon-only ui-dialog-titlebar-close" role="button" title=""><span class="ui-button-icon-primary ui-icon ui-icon-closethick"></span><span class="ui-button-text"></span></button></div>';
+        html += '<div class="overlayDiv ui-dialog-content ui-widget-content" id="ui-id-1031" style="width: auto; min-height: 60px; max-height: auto; height: auto;">';
+        // inhalt
+        html += dialogHtml;
+        html += '</div>';
+        div.innerHTML = html;
+        replaceElement("checkAttackDialogsLink", "dialogCheckAttack", div);
+        document.getElementById("btnCloseDialogCheckAttack").addEventListener("click", function() { replaceElement("checkAttackDialogsLink", "dialogCheckAttack", divDialogPlaceholder); }, false);
+        if (!window.jQuery)
+            log("JQuery is not loaded");
+        else {
+            //$("#ui-id-1031").dxScrollView({height: 500, width: 500, direction: 'both' });
+            //$("#dialogCheckAttack").draggable({containment: '#content', cursor: 'move'});
+        }
+    }
+    catch(ex)
+    {
+        console.log("Error on showDialog: " + ex);
+    }
+}
+
+/** shows the settings dialog */
+function showSettings()
+{
+    var html = '';//'<span style="font:bold 20px arial,serif;">Check Attack v'+settings.lastVersion+'</span></br>';
+    //html += getLabeledInput("cad_version", "Version: ", settings.lastVersion, true);
+    html += '<button id="id_check_attack_reset_cookies" type="button" class="btn_blue">Reset Data</button>';
+    showDialog("Check Attack " + settingsDialogCaption + " - " + settings.lastVersion, html);
+
+    //add EventListeners
+    document.getElementById("id_check_attack_reset_cookies").addEventListener("click", function(){
+        if (confirm(confirmResetData))
+        {
+            resetCookies();
+            alert("data reseted");
+        }
+    }, false);
+}
+
+/** initialize the script and load some informations from Locale Storage */
 function startScript()
 {
     try
     {
         addEventListenersToPage();
+        addCssStyles();
 
         //addCssLink('https://github.com/GeneralAnasazi/OGame-CheckAttack/blob/master/CheckAttackStyles.css');
         // button for checking
-        var btn = document.createElement("a");
-        btn.innerHTML="Check Raid";
-        btn.className="menubutton";
-        btn.href ="javascript:"; 				// i don't like href="#" it can make the page moving
+        var btn = createButton("Check Raid", "menubutton");
         btn.addEventListener('click', function(){ loadInfo() ;}, false);
-        var li=document.createElement("li");
+        var btnSettings = createButton('<div class="menuImage overview highlighted"></div>', "");
+        var span = document.createElement("span");
+        span.className = "menu_icon";
+        span.appendChild(btnSettings);
+        btnSettings.addEventListener('click', function(){ showSettings() ;}, false);
+        var li = document.createElement("li");
+        li.appendChild(span);
         li.appendChild(btn);
         var menu = document.getElementById("menuTableTools");
         menu.appendChild(li);
         createHiddenDiv("verificationAttaque");
         createHiddenDiv("parseCombatReportDetail");
+        var dialogDiv = createDiv("checkAttackDialogs");
+        var dialogLink = document.createElement("li");
+        dialogLink.id = "checkAttackDialogsLink";
+        dialogDiv.appendChild(dialogLink);
+        document.body.appendChild(dialogDiv);
 
         loadData();
         setInterval(onLoadPage, 400);
@@ -2324,11 +2638,30 @@ function startScript()
     }
 }
 
-function trim(string)
+//TODO: translation new vars
+/** translate the viewed vars */
+function translate()
 {
-    return string.replace(/(^\s*)|(\s*$)/g,'');
+    switch (language)
+    {
+        case 'de':
+            setTranslationVars('Verlauf des Risikos', 'jmd. zu Bashen', 'Risiko jmd. zu Bashen', 'Angriff', 'Angriffe');
+            break;
+        case 'en':
+            setTranslationVars('Way to risk', 'to bash', 'Risk to bash', 'attack', 'attacks');
+            confirmResetData = 'You are really sure to reset all the data?';
+            settingsDialogCaption = 'Settings';
+            break;
+        case 'fr':
+            setTranslationVars('Pas de risque', 'de bash', 'Risque de bash', 'attaque', 'attaques');
+            break;
+        default:
+            setTranslationVars('Way to risk', 'to bash', 'Risk to bash', 'attack', 'attacks');
+            break;
+    }
 }
 
+/** check the last version and the current version and do somethings on a new version */
 function versionCheck()
 {
     //settings.lastVersion = "3.3.0.22"; // debug test
@@ -2350,6 +2683,7 @@ function versionCheck()
     }
 }
 
+/** write an object to the local storage */
 function writeToLocalStorage(obj, key)
 {
     var json = JSON.stringify(obj);
@@ -2360,6 +2694,8 @@ function writeToLocalStorage(obj, key)
     }
     catch (ex) {} // do nothing, but prevent error messages
 }
+
+//#endregion
 
 // execute script
 startScript();
