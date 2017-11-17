@@ -1116,11 +1116,14 @@ function ReportList(storageKey, deleteDate) {
         var total = new CombatReport();
         total.defenderName = "Total";
         total.ressources = new Ressources();
+        log(total);
         for (var i = 0; i < reports.length; i++)
         {
             rows += reports[i].getRow();
             if (!reports[i].ressourcesLoot)
+            {
                 total.ressources.add(reports[i].ressources);
+            }
             total.ressources.add(reports[i].ressourcesLoot);
             total.ressources.dec(reports[i].ressourcesLost);
         }
@@ -1128,7 +1131,8 @@ function ReportList(storageKey, deleteDate) {
         rows += total.getRow();
         rows += '</tfoot>';
         var aTitle = "Reports";
-        if (!aTitle)
+        log(title);
+        if (title)
             aTitle = title;
         showDialog(aTitle, '<div class="datagrid"><table class="scroll">'+rows+'</table></div>');
 
@@ -1233,7 +1237,7 @@ function Ressources(span) {
             this.total = obj.total;
         }
     };
-    this.toHtml = function(title, className) {
+    this.toHtml = function(title, className, titleClick) {
         var result = '';
         if (title && className)
         {
@@ -1241,7 +1245,11 @@ function Ressources(span) {
             var spanAttr = 'style="padding: 9px;"';
 
             result += '<div class="' + className + '" style="font-size: 9px;color: grey;font-weight: bold;background: #111111;padding: 5px">';
-            result += getSpanHtml(title, 'class="textCenter" style="'+ titelStyle +'"') + '</br>';
+            if (titleClick)
+                result += '<a href="javascript:" id="' + title + 'Click">'; 
+            result += getSpanHtml(title, 'class="textCenter" style="'+ titelStyle +'"') + '</br>'; 
+            if (titleClick)
+                result += titleClick ? '</a>' : '';
             result += getSpanHtml(ressourceTitles.metal + ': ' + this.metal.toLocaleString(), spanAttr) + '</br>';
             result += getSpanHtml(ressourceTitles.crystal + ': ' + this.crystal.toLocaleString(), spanAttr) + '</br>';
             result += getSpanHtml(ressourceTitles.deuterium + ': ' + this.deuterium.toLocaleString(), spanAttr) + '</br>';
@@ -1642,11 +1650,11 @@ function TotalRessources() {
             switch (type)
             {
                 case "RaidRessources":
-                    return this.ressources.toHtml(title, className);
+                    return this.ressources.toHtml(title, className, false);
                 case "LostRessources":
-                    return this.lostRessources.toHtml(title, className);
+                    return this.lostRessources.toHtml(title, className, false);
                 case "Total":
-                    return this.totalRessources.toHtml(title, className);
+                    return this.totalRessources.toHtml(title, className, true);
             }
         };
     }
@@ -1654,7 +1662,6 @@ function TotalRessources() {
 
 //#endregion
 
-//#region SCRIPT METHODS
 
 function testIt() {
     if (test)
@@ -1732,12 +1739,20 @@ function addEventSendFleet(fleetPage)
     if (fleetPage == 3)
         elementId = "start";
 
-    var sendFleetButton = document.getElementById(elementId);
-    if (sendFleetButton)
-    {
-        sendFleetButton.addEventListener("click", checkAttackSendShips, false);
+    if (addEventListener(elementId, checkAttackSendShips))
         sendFleetPage = fleetPage;
+}
+
+function addEventListener(id, func)
+{
+    var result = false;
+    var element = document.getElementById(id);
+    if (element)
+    {
+        element.addEventListener('click', func, false);
+        result = true;
     }
+    return result;
 }
 
 function addEventListenersToPage()
@@ -2004,6 +2019,12 @@ function display() {
             }, false);
         }
         
+        addEventListener("Total-RessourcesClick", function() {
+            var reports = main.getRessourceReports(null);
+            reports.sortByDateDesc();
+            reports.show(el => el.info.date.getTime() > getBashTimespan() && el.defenderName != 'Unknown' && el.defenderName != playerName, "Total-Ressources");
+        });
+
         // insert a Div as a placeholder to increase the scrollbar range, if needed
         var rect = info.getBoundingClientRect();
         var contentDiv = document.getElementById('contentWrapper');
