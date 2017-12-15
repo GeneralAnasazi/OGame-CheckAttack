@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.3.0.30
+// @version 3.3.0.31
 // @grant		GM_getValue
 // @grant		GM_setValue
 // @grant		GM_deleteValue
@@ -13,6 +13,8 @@
 // @require     http://ajax.googleapis.com/ajax/libs/jquery/2.1.0/jquery.min.js
 
 // ==/UserScript==
+/*jshint esversion: 6 */
+
 "use strict";
 "use moz";
 
@@ -24,13 +26,18 @@ const ERROR = 'Error';
 const TABID_SPY_REPORT = 20;
 const TABID_COMBAT_REPORT = 21; // combat report
 
+//TODO: look for other universe with included espionage attacks
+const UNIVERSE_ESPIONAGE_ATTACKS = [
+    { universeId: "s150", language: "de" }
+];
+
 const DIV_DIALOG_PLACEHOLDER = "id_check_attack_dialog_div";
 const DIV_STATUS_GIF_ID = "id_check_attack_status_div";
 const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to be set after an update
-const VERSION_SCRIPT = '3.3.0.30';
+const VERSION_SCRIPT = '3.3.0.31';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.3.0.28';
 
@@ -41,7 +48,8 @@ const RESET_COOKIES = false;
 //#endregion
 
 //#region  Global Vars
-var test = false;
+var test = true;
+var cssTest = false;
 
 // globale vars
 var calculateRess = false;
@@ -50,6 +58,7 @@ var language = document.getElementsByName('ogame-language')[0].content;
 var playerName = document.getElementsByName('ogame-player-name')[0].content;
 var sendFleetList = new SendFleetList();
 var sendFleetPage = -1;
+var universeId = document.getElementsByName('ogame-player-name')[0].content.split("-")[0];
 
 // translation vars (don't translate here)
 var captionAttack = "attaque";
@@ -72,8 +81,8 @@ var confirmResetData = "Wollen sie wirklich die gespeicherten Daten zurück setz
         AKS_DEFENSE: -2,
         NOTHING_FOUND: -1,
         INACTIVE_PLAYER: 0,
-        ESPIONAGE: 1, // only espionage probe
-        ESPIONAGE_NO_DETAILS: 2, // espionage but no details to look for the used ships
+        ESPIONAGE_NO_DETAILS: 1, // espionage but no details to look for the used ships
+        ESPIONAGE_PROBE_ATTACK: 2, // only espionage probe
         ESPIONAGE_ATTACK: 3, // sended as espionage with battleships
         AKS_ATTACK: 4,
         NO_DETAILS: 5, // no datails and no spy report found -> counts as an attack
@@ -177,6 +186,7 @@ var asyncHelper = {
 /** Main object to handle the data */
 var main = {
     combatReports: new CombatReportList(),
+    farms: new FarmList("FarmList"),
     recycleReports: new RecycleReportList(),
     spyReports: new SpyReportList(),
     totalRessources: new TotalRessources(),
@@ -184,6 +194,22 @@ var main = {
     reading: false,
 
     /***** METHODS */
+    _init: function() {
+        this.combatReports.onNewReport = this._onNewReport;
+        this.recycleReports.onNewReport = this._onNewReport;
+    },
+    _onNewReport: function(report) {
+        try
+        {
+            log('new report add to farms');
+            main.farms.add(report);
+        }
+        catch (ex)
+        {
+            console.log("Error on main._onNewReport: " + ex);
+        }
+    },
+
     calc: function() {
         log('start calc');
         this.totalRessources.clear();
@@ -193,24 +219,38 @@ var main = {
         this.totalRessources.save();
         calculateRess = false;
     },
+    getDateInfo: function(date) {
+        var result = {};
+        result.date = date;
+        result.coord = null;
+        return result;
+    },
     getRessourceReports: function(info) {
         var result = new ReportList();
         result.addRange(this.combatReports);
         result.addRange(this.recycleReports);
-        log(result);
         if (info) {
             var filterFunc = el =>  el.info && el.info.date.getTime() > info.date.getTime() && 
-                                    el.info.coord == info.coord && (el.info.moon == info.moon ||
-                                    el.defenderName == undefined);
+                                    (el.info.coord == info.coord || info.coord === null) && 
+                                    (el.info.moon == info.moon || el.defenderName == undefined);
             result.filterReports(filterFunc);
         }
         return result;
     },
     load: function() {
         this.combatReports.loadFromLocalStorage();
+        this.farms.loadFromLocalStorage();
         this.recycleReports.loadFromLocalStorage();
         this.spyReports.loadFromLocalStorage();
         this.totalRessources.load();
+
+        //add new reports
+        if (this.farms.items.length === 0)
+        {
+            this.farms.addRange(this.combatReports);
+            this.farms.addRange(this.recycleReports);
+        }
+        log(this.farms);
     },
     save: function() {
         this.spyReports.saveToLocalStorage();
@@ -220,6 +260,20 @@ var main = {
             if (this.combatReports.updated)
                 this.combatReports.saveToLocalStorage();
         }
+        this.farms.saveToLocalStorage();
+    },
+    showFarmReports: function(startDate, endDate) {
+        var reportList = new ReportList();
+        for (var i = 0; i < this.farms.items.length; i++)
+        {
+            reportList.add(new FarmReport(this.farms.items[i], startDate, endDate));
+        }
+        reportList.sortByRessources(true);
+        
+        var total = new FarmReport();
+        total.name = "Total";
+        total.ressources = new Ressources();
+        reportList.show(el => el.name != playerName, "Farm Liste", '<tr><th>Name</th><th>Metal</th><th>Crystal</th><th>Deuterium</th></tr>', total);
     },
     start: function() {
         this.reading = true;
@@ -234,12 +288,17 @@ var main = {
 
             if (spyReportUpdated || recycleOrCombatReportUpdated || calculateRess)
             {
+                if (calculateRess)
+                {
+                    this.combatReports.calcAttackStates(this.spyReports);
+                }
                 this.save();
                 display();
             }
         }
     }
 };
+main._init();
 
 var localeSettings = {
     decimalSeperator: '',
@@ -315,6 +374,7 @@ var ressourceTitles = {
 
 // settings object
 var settings = {
+    farmDays: 7,
     // last readed message from combat report
     lastCheckCombatReport: getBashTimespan(),
     // last readed message from spy report
@@ -327,6 +387,7 @@ var settings = {
         var obj = loadFromLocalStorage('Settings');
         if (obj)
         {
+            this.farmDays = obj.farmDays;
             if (obj.lastCheckCombatReport)
             {
                 this.lastCheckCombatReport = new Date(obj.lastCheckCombatReport);
@@ -418,7 +479,8 @@ function Attacks(combatReport) {
         {
             this.attackTimes.push(combatReport.info.date);
             this.coord = combatReport.info.coord;
-            this.defenderName = combatReport.defenderName;
+            if (combatReport.defenderName != 'Unknown')
+                this.defenderName = combatReport.defenderName;
             this.moon = combatReport.info.moon;
             this.count++;
         }
@@ -596,7 +658,8 @@ function CombatReport(msg) {
         }
         return result;
     };
-    this.detailsLoaded = function(spyReportList) {
+    this.detailsLoaded = function(spyReportList, reportList) {
+        var result = false;
         if (this.details)
         {
             this.details.attackerJSON = undefined; // parsed and not needed
@@ -617,8 +680,17 @@ function CombatReport(msg) {
                 log(this);
             }
         }
-        this.status = spyReportList.getStatus(this);
+        var status = spyReportList.getStatus(this);
+        if (status != this.status)
+        {
+            this.status = status;
+            result = true;
+        }
         this.defenderInactive = this.status == bashState.INACTIVE_PLAYER;
+        if (reportList)
+            reportList.onNewReport(this);
+
+        return result;
     };
     this.getDetails = function() {
         if (this.info.id && !this.details)
@@ -682,8 +754,10 @@ function CombatReport(msg) {
         return result;
     };
     this.isBash = function() {
-        //TODO: exclude uni with espionage attacks
-        return parseInt(this.status) > parseInt(bashState.ESPIONAGE_NO_DETAILS);
+        if (UNIVERSE_ESPIONAGE_ATTACKS.find(el => el.universeId = universeId))
+            return parseInt(this.status) > parseInt(bashState.ESPIONAGE_NO_DETAILS);
+        else
+            return parseInt(this.status) > parseInt(bashState.ESPIONAGE_PROBE_ATTACK);
     };
     this.load = function(msg) {
         var result = false;
@@ -775,12 +849,23 @@ function CombatReportList() {
             log("combat report added");
             this.reports.push(report);
             this.updated = true;
-            if (!report.details) // prevent loading details
+            if (report.defenderName && !report.details) // prevent loading details for total losts and loaded details
             {
                 report.getDetails();
             }
         }
         return result;
+    };
+    this.calcAttackStates = function(spyList) {
+        for (var i = 0; i < this.reports.length; i++)
+        {
+            var status = spyList.getStatus(this.reports[i]);
+            if (this.reports[i].status != status)
+            {
+                this.reports[i].status = status;
+                this.updated = true;
+            }
+        }
     };
     /** get the bash attacks */
     this.getAttacks = function() {
@@ -810,10 +895,224 @@ function CombatReportList() {
 			report.setValues(obj.reports[i]);
 			this.reports.push(report);
 		}
-	};
+    };
+    
 }
 CombatReportList.prototype = Object.create(ReportList.prototype);
 CombatReportList.prototype.constructor = CombatReportList;
+
+function Farm(obj) {
+    this.infoList = [];
+    this.name = "";
+    this.updated = false;
+
+    this.add = function(report) {
+        var result = false;
+        if (report)
+        {
+            if (this.name === "" || this.name === "Unknown")
+                this.name = report.defenderName;
+            var found = this.infoList.find(el => el.apiKey === report.info.apiKey);
+            if (!found)
+            {
+                var info = new FarmInfo(report);
+                this.infoList.push(info);
+                this.updated = true;
+                result = true;
+            }
+        }
+        return result;
+    };
+    this.calc = function(startDate, endDate) {
+        var result = new Ressources();
+        var calcList = this.infoList.filter(el => el.date.getTime() >= endDate.getTime() && el.date.getTime() <= startDate.getTime());
+        for (var i = 0; i < calcList.length; i++)
+            result.add(calcList[i].ressources);
+        return result;
+    };
+    /** Used to check, to find a farm */
+    this.findFarmInfo = function(coord) {
+        //TODO: Use the OGame API for the planet coords
+        var idx = this.infoList.findIndex(el => el.coord === coord);
+        if (idx > -1)
+            return this.infoList[idx];
+        else
+            return null;
+    };
+    this.setValues = function(obj) {
+        if (obj)
+        {
+            this.id = obj.id;
+            this.name = obj.name;
+            for (var i = 0; i < obj.infoList.length; i++)
+            {
+                var farmInfo = new FarmInfo();
+                farmInfo.setValues(obj.infoList[i]);
+                this.infoList.push(farmInfo);
+            }
+        }
+    };
+    this.setValues(obj);
+}
+
+function FarmInfo(combatReport) {
+    this.apiKey = null;
+    this.coord = null;
+    this.date = new Date();
+    this.ressources = new Ressources();
+
+    this.loadFromCR = function(combatReport) {
+        this.date = combatReport.info.date;
+        this.coord = combatReport.info.coord;
+        this.apiKey = combatReport.info.apiKey;
+        if (combatReport.ressourcesLoot)
+            this.ressources.add(combatReport.ressourcesLoot);
+        else
+            this.ressources.add(combatReport.ressources);
+        this.ressources.dec(combatReport.ressourcesLost);
+    };
+    this.setValues = function(obj) {
+        this.coord = obj.coord;
+        this.date = new Date(obj.date);
+        this.ressources.setValues(obj.ressources);
+    };
+
+    if (combatReport)
+        this.loadFromCR(combatReport);
+}
+
+function FarmList(storageKey) {
+    this.items = [];
+    this.updated = false;
+    var _storageKey = storageKey;
+
+    this.add = function(report) {
+        if ((!report.ressources) || (report.ressources.isEmpty()))
+        {
+            return;
+        }
+        var farm = this.findFarm(report.defenderName, report.info.coord);
+        if (!farm)
+        {
+            farm = new Farm();
+            
+            this.items.push(farm);
+            this.updated = true;
+        }
+        this.updated = farm.add(report) || this.updated;
+    };
+    this.addRange = function(reportList) {
+        for (var i = 0; i < reportList.reports.length; i++)
+            this.add(reportList.reports[i]);
+    };
+    this.findFarm = function(name, coord) {
+        var idx = this.items.findIndex(el => (el.name == name && name !== "") || el.findFarmInfo(coord) !== null);
+        if (idx > -1)
+            return this.items[idx];
+        else
+            return null;
+
+    };
+    this.load = function(groupedReports) {
+        for (var i = 0; i < groupedReports.length; i++)
+        {
+            for (var j = 0; j < groupedReports[i].length; j++)
+            {
+                this.add(groupedReports[i][j]);
+            }
+        }
+    };
+    this.loadFromLocalStorage = function() {
+        if (_storageKey)
+        {
+            var obj = loadFromLocalStorage(_storageKey);
+            log(obj);
+            if (obj)
+            {
+                for (var i = 0; i < obj.items.length; i++)
+                {
+                    var farm = new Farm();
+                    farm.setValues(obj.items[i]);
+                    this.items.push(farm);
+                }
+            }
+        }
+    };
+    this.showDialog = function() {
+
+    };
+    this.saveToLocalStorage = function() {
+        if (_storageKey && this.updated)
+        {
+            this.updated = false;
+            writeToLocalStorage(this, _storageKey);
+        }
+    };
+}
+
+function FarmReport(farm, startDate, endDate) {
+    Report.call(this);
+
+    this.name = "";
+
+    this.getRow = function () {
+        return '<tr><td>'+this.name+'</td><td>'+this.ressources.metal.toLocaleString()+'</td><td>'+this.ressources.crystal.toLocaleString()+'</td><td>'+this.ressources.deuterium.toLocaleString()+'</td></tr>';
+    };
+    this.load = function(farm, startDate, endDate) {
+        if (farm)
+        {
+            this.name = farm.name;
+            this.info = new ReportInfo();
+            this.info.date = new Date();
+            if (farm.infoList.length > 0)
+                this.info.date = farm.infoList[0].date;
+            this.ressources = farm.calc(startDate, endDate);
+        }
+    };
+    // initialize with params
+    this.load(farm, startDate, endDate);
+}
+FarmReport.prototype = Object.create(Report.prototype);
+RecycleReport.prototype.constructor = FarmReport;
+
+class ApiLocalization {
+    constructor(node) {
+        this.id = null;
+        this.name = null;
+        parse(node);
+    }
+
+    parse(node) {
+        if (node) {
+            this.id = node.getAttribute("id");
+            this.name = node.innerText;
+        }
+    }
+}
+
+class OGameAPI {
+    constructor() {
+        this.readFile = function(filename) {
+            const DEFAULT_URL = "/api/";
+            //https://s800-en.ogame.gameforge.com/api/localization.xml
+            var fileUrl = DEFAULT_URL + filename;
+            //TODO: async call load api xml file
+
+            var parser = new DOMParser();
+            var xmlDoc = parser.parseFromString(text,"text/xml");
+        };
+    }
+
+    readFile(filename) {
+        const DEFAULT_URL = "/api/";
+        //https://s800-en.ogame.gameforge.com/api/localization.xml
+        var fileUrl = DEFAULT_URL + filename;
+        //TODO: async call load api xml file
+
+        var parser = new DOMParser();
+        return parser.parseFromString(text,"text/xml");
+    }
+}
 
 function RecycleReport(msg) {
     Report.call(this); // inherited
@@ -931,21 +1230,37 @@ function Report() {
 
 function ReportInfo(msg) {
     this.id = null;
+    this.apiKey = null;
     this.coord = '';
     this.date = null;
     this.moon = false;
     /***** METHODS *****/ {
     this.equal = function(info) {
-        return this.coord === info.coord && this.date.getTime() === info.date.getTime() &&
-            this.moon === info.moon;
+        return (this.apiKey !== null && info.apiKey !== null && this.apiKey == info.apiKey) ||
+            (this.apiKey === null && info.apiKey === null &&
+            this.date.getTime() === info.date.getTime() &&
+            this.coord === info.coord && this.moon === info.moon);
+    };
+    this.equalWithoutApi = function(info) {
+        return this.date.getTime() === info.date.getTime() && this.coord === info.coord && this.moon === info.moon;
     };
     this.parseMessage = function(msg) {
         if (msg)
         {
             this.id = msg.getAttribute('data-msg-id');
+            this.readApiKey(msg);
             this.coord = this.readCoord(msg);
             this.date = this.readDate(msg);
             this.moon = this.readMoon(msg);
+        }
+    };
+    this.readApiKey = function(msg) {
+        var span = msg.getElementsByClassName("icon_apikey")[0];
+        if (span)
+        {
+            var matches = span.outerHTML.match(/[a-z]{2}-[a-z]{2}-[0-9]{1,3}-[a-z0-9]{10,}/g);
+            if (matches.length > 0)
+                this.apiKey = matches[0];
         }
     };
     this.readCoord = function(msg) {
@@ -960,7 +1275,7 @@ function ReportInfo(msg) {
                 {
                     result = locTab.text;
                     if (result)
-                        result = result.split(' ')[1];
+                        result = "[" + result.split(' [')[1];
                 }
             }
         }
@@ -1004,6 +1319,7 @@ function ReportInfo(msg) {
     this.setValues = function(obj) {
         if (obj)
         {
+            this.apiKey = obj.apiKey;
             this.coord = obj.coord;
             this.date = new Date(obj.date);
             this.id = obj.id;
@@ -1020,12 +1336,23 @@ function ReportList(storageKey, deleteDate) {
     this.reports = [];
     this.updated = false;
 
+    function newReport(list, report) {
+        if (list.onNewReport)
+        {
+            log("try to call the function");
+            list.onNewReport(report);
+        }
+        else
+            log(list.onNewReport);
+    }
+
 	this.add = function(report) {
 		var isNew = this.reports.findIndex(el => el.info.equal(report.info)) == -1;
 		if (isNew)
 		{
             this.reports.push(report);
             this.updated = true;
+            newReport(this, report);
         }
         return isNew;
 	};
@@ -1057,7 +1384,20 @@ function ReportList(storageKey, deleteDate) {
             val = "";
             for (var j = 0; j < keys.length; j++)
             {
-                val += this.reports[i][keys[j]];
+                var splitKeys = keys[j].split(".");
+                switch (splitKeys.length)
+                {
+                    case 1:
+                        val += this.reports[i][splitKeys[0]];
+                        break;
+                    case 2:
+                        val += this.reports[i][splitKeys[0]][splitKeys[1]];
+                    break;
+                    case 3:
+                        val += this.reports[i][splitKeys[0]][splitKeys[1]][splitKeys[2]];
+                    break;
+                }
+                
             }
             index = values.indexOf(val);
             if (index > -1)
@@ -1081,7 +1421,8 @@ function ReportList(storageKey, deleteDate) {
                 this.updated = false;
 			}
 		}
-	};
+    };
+    this.onNewReport = function(report) {log("wrong function");};
 	this.remove = function(report) {
 		var idx = this.reports.findIndex(el => el.info.equal(report.info));
 		if (idx > -1)
@@ -1106,17 +1447,25 @@ function ReportList(storageKey, deleteDate) {
         }
         return result;
     };
-    this.show = function(filterFunc, title) {
+    this.show = function(filterFunc, title, headRow, footerReport) {
         var reports = this.reports;
         if (filterFunc)
             reports = reports.filter(filterFunc);
-        var rows =  '<thead><tr><th>Name</th><th>Coord</th><th>Date</th><th>Metal</th><th>Crystal</th><th>Deuterium</th></tr></thead>' + 
-                    '<tbody">';
+        var headerRow = '<tr><th>Name</th><th>Coord</th><th>Date</th><th>Metal</th><th>Crystal</th><th>Deuterium</th></tr>';
+        if (headRow)
+            headerRow = headRow;
+        var rows =  '<thead>'+headerRow+'</thead><tbody">';
                     
-        var total = new CombatReport();
-        total.defenderName = "Total";
-        total.ressources = new Ressources();
-        log(total);
+        var total = null;
+        if (!footerReport)
+        {
+            total = new CombatReport();
+            total.defenderName = "Total";
+            total.ressources = new Ressources();
+        }
+        else
+            total = footerReport;
+
         for (var i = 0; i < reports.length; i++)
         {
             rows += reports[i].getRow();
@@ -1131,12 +1480,11 @@ function ReportList(storageKey, deleteDate) {
         rows += total.getRow();
         rows += '</tfoot>';
         var aTitle = "Reports";
-        log(title);
         if (title)
             aTitle = title;
         showDialog(aTitle, '<div class="datagrid"><table class="scroll">'+rows+'</table></div>');
 
-        if (!test)
+        if (!cssTest)
             return;
         try
         {
@@ -1168,6 +1516,14 @@ function ReportList(storageKey, deleteDate) {
     };
     this.sortByDateDesc = function() {
         this.reports.sort(compareByDate);
+    };
+    this.sortByRessources = function(desc) {
+        this.reports.sort(function(left, right) {
+            var result = left.ressources.total - right.ressources.total;
+            if (desc)
+                result = result * -1;
+            return result;
+        });
     };
 }
 
@@ -1203,6 +1559,9 @@ function Ressources(span) {
             this.deuterium -= ress.deuterium;
             this.calcTotal();
         }
+    };
+    this.isEmpty = function() {
+        return this.metal === 0 && this.crystal === 0 && this.deuterium === 0;
     };
     this.load = function(span) {
         if (span && span.innerHTML)
@@ -1241,21 +1600,12 @@ function Ressources(span) {
         var result = '';
         if (title && className)
         {
-            var titelStyle = 'font-size: 10px;color: #4f85bb;font-weight: bold;background: black;border: 1px solid #383838;border-radius: 4px;padding: 1px;text-align: center;display: block';
             var spanAttr = 'style="padding: 9px;"';
-
-            result += '<div class="' + className + '" style="font-size: 9px;color: grey;font-weight: bold;background: #111111;padding: 5px">';
-            if (titleClick)
-                result += '<a href="javascript:" id="' + title + 'Click">'; 
-            result += getSpanHtml(title, 'class="textCenter" style="'+ titelStyle +'"') + '</br>'; 
-            if (titleClick)
-                result += titleClick ? '</a>' : '';
-            result += getSpanHtml(ressourceTitles.metal + ': ' + this.metal.toLocaleString(), spanAttr) + '</br>';
-            result += getSpanHtml(ressourceTitles.crystal + ': ' + this.crystal.toLocaleString(), spanAttr) + '</br>';
-            result += getSpanHtml(ressourceTitles.deuterium + ': ' + this.deuterium.toLocaleString(), spanAttr) + '</br>';
-            result += getSpanHtml(ressourceTitles.total + ': ' + this.total.toLocaleString(), spanAttr) + '</br>';
-
-            result +='</div>';
+            var innerHtml = getSpanHtml(ressourceTitles.metal + ': ' + this.metal.toLocaleString(), spanAttr) + '</br>';
+            innerHtml += getSpanHtml(ressourceTitles.crystal + ': ' + this.crystal.toLocaleString(), spanAttr) + '</br>';
+            innerHtml += getSpanHtml(ressourceTitles.deuterium + ': ' + this.deuterium.toLocaleString(), spanAttr) + '</br>';
+            innerHtml += getSpanHtml(ressourceTitles.total + ': ' + this.total.toLocaleString(), spanAttr) + '</br>';
+            result = getTitle(className, title, titleClick, innerHtml);
         }
         return result;
     };
@@ -1501,12 +1851,12 @@ function SpyReportList() {
                 return bashState.OWN_DEFENSE;
             }
 
-            idx = this.reports.findIndex(el => el.info.equal(report.info));
+            idx = this.reports.findIndex(el => el.info.equalWithoutApi(report.info));
             if (idx > -1)
             {
                 // spy report has the same time and coords as the combat report
                 if (report.onlyEspionageProbe())
-                    result = bashState.ESPIONAGE;
+                    result = bashState.ESPIONAGE_PROBE_ATTACK;
                 else
                     result = bashState.ESPIONAGE_ATTACK;
             }
@@ -1540,9 +1890,11 @@ function SpyReportList() {
         else if (!report.details)
         {
             //try to look for a spy report at the same time
-            idx = this.reports.findIndex(el => el.info.equal(report.info));
-            if (idx > -1)
+            idx = this.reports.findIndex(el => el.info.equalWithoutApi(report.info));
+            if (idx > -1) //espionage report found
+            {
                 result = bashState.ESPIONAGE_NO_DETAILS;
+            }
             else
             {
                 if (this.isInactive(report))
@@ -1670,7 +2022,6 @@ function testIt() {
         {
             //show Dialog
             //main.combatReports.show(el => el.defenderName == 'Nimrod');
-            log(main.combatReports.groupeBy(["defenderName"], el => el.defenderName == val.defenderName));
         }
         catch (ex)
         {
@@ -1700,18 +2051,16 @@ function addCssStyles()
     var style = document.createElement("style");
     style.type = "text/css";
 
-    var tableStyle =    ".datagrid table { border-collapse: collapse; text-align: left; width: 100%; " + (test ? "" : "overflow: auto; ") + "} " +
+    var tableStyle =    ".datagrid table { border-collapse: collapse; text-align: left; width: 100%; " + (cssTest ? "" : "overflow: auto; display: block; ") + "} " +
                         ".datagrid {font: normal 12px/150% Arial, Helvetica, sans-serif; background: #fff; border: 1px solid #006699; -webkit-border-radius: 3px; -moz-border-radius: 3px; border-radius: 3px; }" +
                         ".datagrid table td, .datagrid table th { padding: 3px 10px; min-width: 50px; }" + 
-                        ".datagrid table thead, .datagrid table tfoot { " + (test ? "display: block; " : "") + "width: 100% }" +
+                        ".datagrid table thead, .datagrid table tfoot { " + (cssTest ? "display: block; " : "") + "width: 100% }" +
                         ".datagrid table thead th, .datagrid table tfoot td { background:-webkit-gradient( linear, left top, left bottom, color-stop(0.05, #006699), color-stop(1, #00557F) );background:-moz-linear-gradient( center top, #006699 5%, #00557F 100% );filter:progid:DXImageTransform.Microsoft.gradient(startColorstr='#006699', endColorstr='#00557F');background-color:#006699; color:#FFFFFF; font-size: 14px; font-weight: bold; border-left: 1px solid #0070A8; } " +
                         ".datagrid table tfoot { width: 100%} " +
-                        //".datagrid table thead th:first-child { border: none; }" +
-                        //".datagrid table tfoot td:first-child { border: none; }" +
-                        ".datagrid table tbody td { color: #00496B; border-left: 1px solid #E1EEF4; font-size: 12px;font-weight: normal; }" +
+                        ".datagrid table tbody td { color: #00496B; border-left: 1px solid #E1EEF4; font-size: 12px;font-weight: normal;}" +
                         ".datagrid table tbody .alt td { background: #E1EEF4; color: #00496B; }" +
                         ".datagrid table tbody tr:last-child td { border-bottom: none; }" +
-                        ".datagrid table tbody { overflow-y: auto; min-height: 40px; max-height: 300px; " + (test ? "display: block; " : "") + "}";
+                        ".datagrid table tbody { overflow-y: auto; min-height: 40px; " + (cssTest ? "display: block; " : "") + "}";
 
     var toolbarStyle =  ".checkAttack-toolbar {width: 100%; background-color: #555; overflow: auto;}" +
                         ".checkAttack-toolbar a {float: left; width: 20px; height: 20px; text-align: center; padding: 3px 0; transition: all 0.3s ease; color: white; font-size: 12px; display: inline-block;}" +
@@ -1873,7 +2222,7 @@ function createSpanStatus(msg)
 
 function createToolbar(parent, icons)
 {
-    if (!test)
+    if (!cssTest)
         return;
 
     function addIcon(parent, icon) {
@@ -1988,6 +2337,7 @@ function display() {
         htmlCount += main.totalRessources.toHtml('Raid-Ressources', 'attackContent', 'RaidRessources');
         htmlCount += main.totalRessources.toHtml('Lost-Ressources', 'attackContent', 'LostRessources');
         htmlCount += main.totalRessources.toHtml('Total-Ressources', 'attackContent', 'Total');
+        htmlCount += getTitle('attackContent', 'Farms', 'Farms', '');
 
         var info = createDiv(DIV_STATUS_ID, "content-box-s");
         info.style.width = '170px';
@@ -2024,7 +2374,9 @@ function display() {
             reports.sortByDateDesc();
             reports.show(el => el.info.date.getTime() > getBashTimespan() && el.defenderName != 'Unknown' && el.defenderName != playerName, "Total-Ressources");
         });
-
+        addEventListener("FarmsClick", function() {
+            main.showFarmReports(new Date(), getBashTimespan(-60 * 24 * 7));
+        });
         // insert a Div as a placeholder to increase the scrollbar range, if needed
         var rect = info.getBoundingClientRect();
         var contentDiv = document.getElementById('contentWrapper');
@@ -2263,7 +2615,7 @@ function getMessageDetailsAsync(msgId) {
                                     {
                                         var json = firstSplit.split("');")[0];
                                         main.combatReports.reports[idx].details = jQuery.parseJSON(json);
-                                        main.combatReports.reports[idx].detailsLoaded(main.spyReports);
+                                        main.combatReports.reports[idx].detailsLoaded(main.spyReports, main.combatReports);
                                         main.combatReports.updated = true;
                                     }
                                 }
@@ -2306,6 +2658,44 @@ function getSpanHtml(innerHtml, attributes) {
 function getTooltip(innerHtml)
 {
     return '<span class="tooltip tooltipRight tooltipClose" title="<div class=&quot;htmlTooltip&quot;>' + innerHtml + '</div>"</span>';
+}
+
+function getTitle(className, title, titleClick, innerHtml)
+{
+    var result = '';
+    if (title && className)
+    {
+        var titelStyle = 'font-size: 10px;color: #4f85bb;font-weight: bold;background: black;border: 1px solid #383838;border-radius: 4px;padding: 1px;text-align: center;display: block';
+
+        result += '<div class="' + className + '" style="font-size: 9px;color: grey;font-weight: bold;background: #111111;padding: 5px">';
+        if (titleClick)
+            result += '<a href="javascript:" id="' + title + 'Click">'; 
+        result += getSpanHtml(title, 'class="textCenter" style="'+ titelStyle +'"') + '</br>'; 
+        if (titleClick)
+            result += titleClick ? '</a>' : '';
+        result += innerHtml;
+        result +='</div>';
+    }
+    return result;
+}
+
+function isCombatReport(msg)
+{
+    //I need the translation to check for a combat report.
+    var crTotalLost = "Der Kontakt zur angreifenden Flotte ging verloren.";
+
+    //TODO: translations
+    switch (language)
+    {
+        case "en":
+            
+            break;
+        case "fr":
+            break;
+    }
+
+    return (msg.getElementsByClassName('combatLeftSide')[0]) || 
+           (msg.getElementsByClassName('msg_title')[0].textContent && msg.getElementsByClassName('msg_title')[0].textContent.includes(crTotalLost));
 }
 
 //local storage functions
@@ -2409,9 +2799,14 @@ function onLoadPage()
                     for (var i = 0; i < msgList.length; i++)
                     {
                         // is a combat report page loaded
-                        if (msgList[i].getElementsByClassName('combatLeftSide')[0])
+                        if (isCombatReport(msgList[i]))
                         {
                             var combatReport = new CombatReport(msgList[i]);
+                            if (!combatReport.defenderName)
+                            {
+                                if (combatReport.detailsLoaded(main.spyReports, main.combatReports))
+                                    main.combatReports.updated = true;
+                            }
                             main.combatReports.add(combatReport);
                         }
                         else // look for other reports
@@ -2461,6 +2856,12 @@ function readCombatReports(page)
                 result = false;
                 break;
             }
+            if (!combatReport.defenderName)
+            {
+                if (combatReport.detailsLoaded(main.spyReports, main.combatReports))
+                    main.combatReports.updated = true;
+            }
+
             main.combatReports.add(combatReport);
         }
     }
@@ -2540,6 +2941,7 @@ function resetCookies()
     deleteValueLocalStorage('CombatReportList');
     deleteValueLocalStorage('RecycleReportList');
     deleteValueLocalStorage('TotalRaidRessources');
+    deleteValueLocalStorage('FarmList');
 }
 
 function setStatus(msg)
@@ -2567,19 +2969,19 @@ function showDialog(title, dialogHtml)
 {
     try
     {
-        var div = createDiv("dialogCheckAttack", "ui-dialog ui-widget ui-widget-content ui-corner-all ui-front ui-draggable");
+        var div = createDiv("dialogCheckAttack", "ui-dialog ui-widget ui-widget-content ui-corner-all ui-front");
         div.setAttribute("role", "dialog");
-        div.setAttribute("tabindex", "-1");
-        div.setAttribute("aria-describedby", "ui-id-1031");
-        div.setAttribute("aria-labelledby", "ui-id-1032");
+        //div.setAttribute("tabindex", "-1");
+        //div.setAttribute("aria-describedby", "ui-id-1031");
+        //div.setAttribute("aria-labelledby", "ui-id-1032");
 
         var contentWrapper = document.getElementById("id_check_attack").getBoundingClientRect();
         var doc = document.documentElement;
         var top = contentWrapper.top + doc.scrollTop;
-        div.style = "height: auto; width: auto; min-width: 200px; top: " + top + "px; left: " + (contentWrapper.left + contentWrapper.width + 10) + "px;";
+        div.style = "width: auto; min-width: 200px; top: " + top + "px; left: " + (contentWrapper.left + contentWrapper.width + 10) + "px;"; //height: auto; 
         var html =  '<div class="ui-dialog-titlebar ui-widget-header ui-corner-all ui-helper-clearfix ui-draggable-handle">';
         html += '<span id="ui-id-1032" class="ui-dialog-title">' + title +'</span><button id="btnCloseDialogCheckAttack" type="button" class="ui-button ui-widget ui-state-default ui-corner-all ui-button-icon-only ui-dialog-titlebar-close" role="button" title=""><span class="ui-button-icon-primary ui-icon ui-icon-closethick"></span><span class="ui-button-text"></span></button></div>';
-        html += '<div class="overlayDiv ui-dialog-content ui-widget-content" id="ui-id-1031" style="width: auto; min-height: 60px; max-height: auto; height: auto;">';
+        html += '<div class="overlayDiv ui-dialog-content ui-widget-content" id="ui-id-1031" style="width: auto; min-height: 60px; max-height: 400px; height: auto; overflow-y: scroll;">';
         // inhalt
         html += dialogHtml;
         html += '</div>';
@@ -2602,9 +3004,10 @@ function showDialog(title, dialogHtml)
 /** shows the settings dialog */
 function showSettings()
 {
-    var html = '';//'<span style="font:bold 20px arial,serif;">Check Attack v'+settings.lastVersion+'</span></br>';
-    //html += getLabeledInput("cad_version", "Version: ", settings.lastVersion, true);
+    var html = '<div>';//'<span style="font:bold 20px arial,serif;">Check Attack v'+settings.lastVersion+'</span></br>';
+    html += getLabeledInput("cad_farmDays", "Farm Days: ", settings.farmdays, false);
     html += '<button id="id_check_attack_reset_cookies" type="button" class="btn_blue">Reset Data</button>';
+    html += '</div><div>';
     showDialog("Check Attack " + settingsDialogCaption + " - " + settings.lastVersion, html);
 
     //add EventListeners
