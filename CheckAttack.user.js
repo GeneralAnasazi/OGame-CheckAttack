@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.3.0.33
+// @version 3.3.0.34
 // @grant       GM_xmlhttpRequest
 // @require     http://ajax.googleapis.com/ajax/libs/jquery/2.1.0/jquery.min.js
 
@@ -15,7 +15,6 @@
 
 //#region  CONSTANTS
 
-const COOKIE_EXPIRES_DAYS = 1;
 const ERROR = 'Error';
 const TABID_SPY_REPORT = 20;
 const TABID_COMBAT_REPORT = 21; // combat report
@@ -32,19 +31,19 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to be set after an update
-const VERSION_SCRIPT = '3.3.0.33';
+const VERSION_SCRIPT = '3.3.0.34';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.3.0.28';
 
 // debug consts
 const RELEASE = true;
-const DEBUG = false && !RELEASE; // set it to true enable debug messages -> log(msg)
+const DEBUG = true && !RELEASE; // set it to true enable debug messages -> log(msg)
 const RESET_COOKIES = false && !RELEASE;
 
 //#endregion
 
 //#region  Global Vars
-var test = false && !RELEASE;
+var test = true && !RELEASE;
 var cssTest = false && !RELEASE;
 
 // globale vars
@@ -229,9 +228,9 @@ class CASettings extends PropertyLoader {
     }
 }
 
-class ApiLocalization {
-
+class ApiDefaultObject extends PropertyLoader {
     constructor(node) {
+        super();
         this.id = null;
         this.name = null;
         this.parse(node);
@@ -240,7 +239,43 @@ class ApiLocalization {
     parse(node) {
         if (node) {
             this.id = node.getAttribute("id");
+            this.name = node.getAttribute("name");
+            return true;
+        }
+        else
+            return false;
+    }
+}
+
+class ApiLocalization extends ApiDefaultObject {
+
+    constructor(node) {
+        super(node);
+        this.parse(node);
+    }
+
+    parse(node) {
+        if (super.parse(node)) {
             this.name = node.innerHTML;
+        }
+    }
+}
+
+class ApiPlanet extends ApiDefaultObject {
+    
+    constructor(node) {
+        super();
+        this.coord = null;
+        this.moon = null;
+        this.parse(node);
+    }
+
+    get hasMoon() { return (this.moon) ? true : false; }
+
+    parse(node) {
+        if (super.parse(node)) {
+            this.coord = node.getAttribute("coords");
+            this.moon = node.childNodes[0] ? true : false;
         }
     }
 }
@@ -272,22 +307,61 @@ class List extends Array {
     }
 }
 
+class ApiPlanetList extends List {
+    constructor() {
+
+    }
+
+    loadFromXmlDoc(doc) {
+        //TODO =>
+    }
+
+}
+
+class ApiPlayer extends ApiDefaultObject {
+    
+    constructor(node) {
+        super();
+        this.allianceId = null;
+        this.planets = new ApiPlanetList();
+        this.homePlanet = null;
+        this.status = null;
+        this.parse(node);
+    }
+
+    loadData() {
+        var doc = OGameAPI.getApiXml("playerData.xml?id=" + this.id, false);
+        this.planets.loadFromXmlDoc(doc);
+    }
+    parse(node) {
+        if (node) {
+            switch (node.tagName) {
+                case "planet": //universe.xml
+                    this.homePlanet = node.getAttribute("coords");
+                    break;
+                case "player": //players.xml
+                    if (super.parse(node)) {
+                        this.allianceId = node.getAttribute("alliance");
+                        this.status = node.getAttribute("status");
+                    }
+                    break;
+            }
+        }
+    }
+}
+
 class ApiList extends List {
     constructor() {
         super();
     }
-    load(xmlName) {
-        //load xml and parse it
-        var x = new XMLHttpRequest();
-        var self = this;
-        x.open("GET", "/api/" + xmlName, true);
-        x.onreadystatechange = function() {
-            if (this.readyState == 4 && this.status == 200)
-            {
-                self.loadFinished(x.responseXML);
-            }
-        };
-        x.send(null);
+    /**
+     * load the api xml
+     * @param {String} xmlName 
+     * @param {boolean} async 
+     */
+    load(xmlName, async) {
+        //load xml and parse it 
+        OGameAPI.getApiXml(xmlName, async, this.loadFinished, this);
     }
     loadFinished(doc) {
         //implement to override
@@ -327,27 +401,97 @@ class ApiLocalizationList extends ApiList {
 
 }
 
-class OGameAPI {
+class ApiPlayerList extends ApiList {
+    
     constructor() {
-        this.readFile = function(filename) {
-            const DEFAULT_URL = "/api/";
-            //https://s800-en.ogame.gameforge.com/api/localization.xml
-            var fileUrl = DEFAULT_URL + filename;
-            //TODO: async call load api xml file
-
-            var parser = new DOMParser();
-            var xmlDoc = parser.parseFromString(text,"text/xml");
-        };
+        super();
     }
 
-    readFile(filename) {
-        const DEFAULT_URL = "/api/";
-        //https://s800-en.ogame.gameforge.com/api/localization.xml
-        var fileUrl = DEFAULT_URL + filename;
-        //TODO: async call load api xml file
+    add(player) {
+        if (!this.contains(player)) {
+            super.add(player);
+        } else {
+            //update
+        }
 
-        var parser = new DOMParser();
-        return parser.parseFromString(text,"text/xml");
+    }
+    clear() {
+        this.splice(0, this.length);
+    }    
+    /**
+     * load the playerlist from the api file
+     */
+    load() {
+        super.load("players.xml", true);
+    }
+    /**
+     * load the details of the player (planet positions)
+     * @param {ApiPlayer} player 
+     */
+    loadDetails(player) {
+        super.load("playerData.xml?id=" + player.id, false);
+    }
+    /**
+     * will be called after loading the xml from the api
+     * @param {XMLDocument} doc 
+     */
+    loadFinished(doc, self) {
+        super.loadFinished(doc);
+        var argThis = this;
+        if (!argThis) {
+            if (self)
+                argThis = self;
+            else {
+                console.error("ApiPlayerList.loadFinished Error: parameter self is needed");
+                return;
+            }
+        }
+
+        // check wich call it was and read the data
+        switch (doc.documentElement.nodeName) {
+            case "players":
+                // read all player data
+                var players = doc.getElementsByTagName("player");
+                for (var i = 0; i < players.length; i++)
+                {
+                    var player = new ApiPlayer(players[i]);
+                    if (player.id) {
+                        argThis.add(player);
+                        //loadDetails(player);
+                    }
+                }
+                log(argThis);
+                break;
+            case "playerData":
+                var planets = doc.getElementsByTagName("planets")[0].getElementsByTagName("planet");
+                planets.sort(function(left, right) {
+                    return left.getAttribute("player") - right.getAttribute("player");
+                });
+                log(planets);
+                break;
+        }
+    }
+}
+
+class OGameAPI {
+    constructor() {
+    }
+
+    static getApiXml(xmlFile, async, callback, thisArg) {
+        //load xml and parse it
+        var x = new XMLHttpRequest();
+        x.open("GET", "/api/" + xmlFile, async);
+        x.onreadystatechange = function() {
+            if (this.readyState == 4 && this.status == 200)
+            {
+                if (async && (typeof callback === "function"))
+                    callback(x.responseXML, thisArg);
+                else
+                    return x.responseXML;
+            }
+        };
+        x.send(null);
+        
     }
 }
 
@@ -2031,7 +2175,7 @@ var asyncHelper = {
                     settings.lastCheckCombatReport = this.lastCheck;
                     break;
             }
-            settings.write();
+            settings.saveToLocalStorage();
             this.currentPage = -1;
             this.lastCheck = getBashTimespan();
             this.maxPage = -1;
@@ -2257,10 +2401,14 @@ function testIt() {
     {
         try
         {
-            getLocalStorageSize(DEBUG);
+            
+            //getLocalStorageSize(DEBUG);
 
-            var localization = new ApiLocalizationList();
-            localization.load();
+            //var localization = new ApiLocalizationList();
+            //localization.load();
+
+            //var playerData = new ApiPlayerList();
+            //playerData.load();
         }
         catch (ex)
         {
@@ -3006,6 +3154,7 @@ function loadData()
             settings.lastCheckSpyReport = getBashTimespan();
             loadInfo();
         }
+        log(main.spyReports.getStatus(main.combatReports.reports[3]));
     } 
     catch (ex) {
         console.log("Error on loadData: " + ex);    
@@ -3065,7 +3214,7 @@ function onLoadPage()
                         if (isCombatReport(msgList[i]))
                         {
                             var combatReport = new CombatReport(msgList[i]);
-                            if (!combatReport.defenderName)
+                            if (combatReport.defenderName == "Unknown")
                             {
                                 if (combatReport.detailsLoaded(main.spyReports, main.combatReports))
                                     main.combatReports.updated = true;
@@ -3119,7 +3268,7 @@ function readCombatReports(page)
                 result = false;
                 break;
             }
-            if (!combatReport.defenderName)
+            if (combatReport.defenderName == "Unknown")
             {
                 if (combatReport.detailsLoaded(main.spyReports, main.combatReports))
                     main.combatReports.updated = true;
