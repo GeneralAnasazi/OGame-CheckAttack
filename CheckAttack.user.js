@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.3.0.34
+// @version 3.3.0.35
 // @grant       GM_xmlhttpRequest
 // @require     http://ajax.googleapis.com/ajax/libs/jquery/2.1.0/jquery.min.js
 
@@ -31,7 +31,7 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to be set after an update
-const VERSION_SCRIPT = '3.3.0.34';
+const VERSION_SCRIPT = '3.3.0.35';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.3.0.28';
 
@@ -627,8 +627,9 @@ class ReportInfo {
                 this.date.getTime() === info.date.getTime() &&
                 this.coord === info.coord && this.moon === info.moon);
     }
-    equalWithoutApi(info) {
-        return this.date.getTime() === info.date.getTime() && this.coord === info.coord && this.moon === info.moon;
+    equalWithoutApi(info, noMoon) {
+        return  this.date.getTime() === info.date.getTime() && this.coord === info.coord && 
+                (this.moon === info.moon || noMoon);
     }
     parseMessage(msg) {
         if (msg) {
@@ -2015,7 +2016,7 @@ class SpyReportList extends ReportList {
         }
         else if (!report.details) {
             //try to look for a spy report at the same time
-            idx = this.reports.findIndex(el => el.info.equalWithoutApi(report.info));
+            idx = this.reports.findIndex(el => el.info.equalWithoutApi(report.info, true));
             if (idx > -1) {
                 result = bashState.ESPIONAGE_NO_DETAILS;
             }
@@ -3154,7 +3155,7 @@ function loadData()
             settings.lastCheckSpyReport = getBashTimespan();
             loadInfo();
         }
-        log(main.spyReports.getStatus(main.combatReports.reports[3]));
+        log(main.spyReports.getStatus(main.combatReports.reports[0]));
     } 
     catch (ex) {
         console.log("Error on loadData: " + ex);    
