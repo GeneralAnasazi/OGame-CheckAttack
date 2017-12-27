@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.3.0.35
+// @version 3.4.0.0
 // @grant       GM_xmlhttpRequest
 // @require     http://ajax.googleapis.com/ajax/libs/jquery/2.1.0/jquery.min.js
 
@@ -31,9 +31,9 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to be set after an update
-const VERSION_SCRIPT = '3.3.0.35';
+const VERSION_SCRIPT = '3.4.0.0';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
-const VERSION_SCRIPT_RESET = '3.3.0.28';
+const VERSION_SCRIPT_RESET = '3.4.0.0';
 
 // debug consts
 const RELEASE = true;
@@ -52,6 +52,7 @@ var divDialogPlaceholder = createDiv(DIV_DIALOG_PLACEHOLDER);
 var language = document.getElementsByName('ogame-language')[0].content;
 var playerName = document.getElementsByName('ogame-player-name')[0].content;
 var server = document.getElementsByName('ogame-universe')[0].content;
+var serverUrl = "https://" + server;
 var universeId = server.split("-")[0];
 
 // translation vars (don't translate here)
@@ -181,10 +182,22 @@ class PropertyLoader {
 
     }
 
+    checkSetParam(param, def) {
+        if (param)
+            return param;
+        else
+            return def;
+    }
     checkSetValues(obj, keys) {
         for (var i = 0; i < keys.length; i++) {
             if (obj[keys[i]])
                 this[keys[i]] = obj[keys[i]];
+        }
+    }
+    setProperties(obj) {
+        for (var key in obj.keys) {
+            if (obj[key])
+                this[key] = obj[key];
         }
     }
 }
@@ -281,39 +294,83 @@ class ApiPlanet extends ApiDefaultObject {
 }
 
 class List extends Array {
-    
-    constructor() {
+    /**
+     * 
+     * @param {String} storageKey 
+     */
+    constructor(storageKey) {
         super();
         this.updated = false;
+        this.storageKey = storageKey;
     }
 
     add(item) {
         this.push(item);
         this.updated = true;
     }
+    getNewItem(item) {
+        //implement to ovverride
+        return null;
+    }
     contains(item) {
         return this.find(el => !el.id && el.id == item.id);
     }
+    /**
+     * @returns {object} The loaded object from the Local Storage
+     */
     loadFromLocalStorage() {
-
+        if (this.storageKey) {
+            var obj = loadFromLocalStorage(this.storageKey);
+            if (obj) {
+                for (var i = 0; i < obj.length; i++) {
+                    var item = this.getNewItem(obj[i]);
+                    this.add(item);
+                }
+                this.updated = false;
+            }
+            return obj;
+        } else {
+            return null;
+        }
     }
     remove(item) {
         var idx = this.findIndex(el => !el.id && el.id == item.id);
         if (idx > -1)
             this.splice(idx, 1);
     }
+    removeFromLocalStorage() {
+        if (this.storageKey)
+            deleteValueLocalStorage(this.storageKey);
+    }
     saveToLocalStorage() {
-
+        var result = false;
+        if (this.updated && this.storageKey) {
+            this.updated = false;
+            writeToLocalStorage(this, this.storageKey);
+            result = true;
+        }
+        return result;
     }
 }
 
 class ApiPlanetList extends List {
     constructor() {
-
+        super();
     }
 
+    add(planet) {
+        var idx = this.findIndex(el => el.id == planet.id);
+        if (idx == -1)
+            super.add(planet);
+        else {
+            //update
+        }
+    }
     loadFromXmlDoc(doc) {
-        //TODO =>
+        var planets = doc.getElementsByTagName("planet");
+        for (var i = 0; i < planets.length; i++) {
+            this.add(new ApiPlanet(planets[i]));
+        }
     }
 
 }
@@ -351,17 +408,30 @@ class ApiPlayer extends ApiDefaultObject {
 }
 
 class ApiList extends List {
-    constructor() {
-        super();
+    constructor(storageKey, xmlFile) {
+        super(storageKey);
+        this.loadTimestamp = null;
+        this.xmlFile = xmlFile;
+    }
+
+    checkUpdates(xmlFile) {
+        var file = xmlFile;
+        if (!file)
+            file = this.xmlFile; 
+        var head = OGameAPI.getApiHead(file);
+        return (head && head.date.getTime() > this.loadTimestamp);
     }
     /**
      * load the api xml
-     * @param {String} xmlName 
      * @param {boolean} async 
+     * @param {String} [xmlFile]
      */
-    load(xmlName, async) {
-        //load xml and parse it 
-        OGameAPI.getApiXml(xmlName, async, this.loadFinished, this);
+    load(async, xmlFile) {
+        //load xml and parse it
+        var file = xmlFile;
+        if (!file)
+            file = this.xmlFile; 
+        OGameAPI.getApiXml(file, async, this.loadFinished, this);
     }
     loadFinished(doc) {
         //implement to override
@@ -370,7 +440,7 @@ class ApiList extends List {
 
 class ApiLocalizationList extends ApiList {
     constructor() {
-        super();
+        super(null, "localization.xml");
         this.missions = new List();
     }
 
@@ -385,7 +455,7 @@ class ApiLocalizationList extends ApiList {
             return [];
     }
     load() {
-        super.load("localization.xml");
+        super.load(true);
     }
     loadFinished(doc) {
         super.loadFinished(doc);
@@ -404,7 +474,8 @@ class ApiLocalizationList extends ApiList {
 class ApiPlayerList extends ApiList {
     
     constructor() {
-        super();
+        super("PlayerList", "players.xml");
+        
     }
 
     add(player) {
@@ -417,19 +488,40 @@ class ApiPlayerList extends ApiList {
     }
     clear() {
         this.splice(0, this.length);
-    }    
+    }
+    /**
+     * @param {ApiPlayer} item
+     * @returns {ApiPlayer}
+     * */    
+    getNewItem(item) {
+        var result = super.getNewItem(item);
+        result = new ApiPlayer();
+        result.setProperties(item);
+        if (item.planets) {
+            for (var i = 0; i < item.planets.length; i++) {
+                var planet = new ApiPlanet();
+                planet.checkSetValues(item.planets[i], ["id", "name", "coord", "moon"]);
+                result.planets.add(planet);
+            }
+            result.planets.updated = false;
+        }
+        return result;
+    }
     /**
      * load the playerlist from the api file
      */
     load() {
-        super.load("players.xml", true);
+        super.load(true);
     }
     /**
      * load the details of the player (planet positions)
      * @param {ApiPlayer} player 
      */
     loadDetails(player) {
-        super.load("playerData.xml?id=" + player.id, false);
+        var result = super.load(false, "playerData.xml?id=" + player.id);
+        if (result) {
+            this.loadFinished(result, this);
+        }
     }
     /**
      * will be called after loading the xml from the api
@@ -439,9 +531,10 @@ class ApiPlayerList extends ApiList {
         super.loadFinished(doc);
         var argThis = this;
         if (!argThis) {
-            if (self)
+            if (self) {
                 argThis = self;
-            else {
+                argThis.loadTimestamp = doc.documentElement.getAttribute("timestamp");
+            } else {
                 console.error("ApiPlayerList.loadFinished Error: parameter self is needed");
                 return;
             }
@@ -471,28 +564,90 @@ class ApiPlayerList extends ApiList {
                 break;
         }
     }
+    loadFromLocalStorage() {
+        var obj = super.loadFromLocalStorage();
+        if (obj) {
+            this.loadTimestamp = obj.loadTimestamp;
+        }
+    }
 }
 
 class OGameAPI {
     constructor() {
     }
 
+    static get url() {
+        return serverUrl + "/api/";
+    }
+
+    static getApiHead(xmlFile) {
+        var x = new XMLHttpRequest();
+        x.open("HEAD", this.url + xmlFile, false);
+        x.send(null);
+        if (x.status === 200) {
+            return this.getApiHeadObj(x.getAllResponseHeaders());
+        } else {
+            console.error("Error on getApiHead: " + x.statusText);
+            return null;
+        }
+    }
+
+    /**
+     * parse the response header
+     * @param {String} responseHeader
+     * @returns {Object} the header object with all given information
+     */
+    static getApiHeadObj(responseHeader) {
+        var result = {};
+        // parse the result
+        var arr = responseHeader.split("\n");
+        for (var i = 0; i < arr.length; i++) {
+            var values = arr[i].split(": ");
+            if (values[0] !== "") {
+                switch (values[0]) {
+                    case "content-length":
+                        result[values[0]] = parseInt(values[1]);
+                        break;
+                    case "date":
+                    case "expires":
+                    case "last-modified":
+                        result[values[0]] = new Date(values[1]);
+                        break;
+                    default:
+                        result[values[0]] = values[1];
+                        break;
+                }
+            }
+        }
+        return result;
+    }
+
     static getApiXml(xmlFile, async, callback, thisArg) {
         //load xml and parse it
         var x = new XMLHttpRequest();
-        x.open("GET", "/api/" + xmlFile, async);
-        x.onreadystatechange = function() {
-            if (this.readyState == 4 && this.status == 200)
-            {
-                if (async && (typeof callback === "function"))
-                    callback(x.responseXML, thisArg);
-                else
-                    return x.responseXML;
-            }
-        };
+        x.open("GET", this.url + xmlFile, async);
+        if (async) {
+            x.onreadystatechange = function() {
+                if (this.readyState == 4 && this.status == 200)
+                {
+                    if (async && (typeof callback === "function"))
+                        callback(x.responseXML, thisArg);
+                }
+            };
+        }
         x.send(null);
-        
+        if (!async) {
+            return x.responseXML;
+        }
     }
+
+    static getOwnPlanets() {
+        var ownPlanets = new ApiPlanetList();
+
+        return ownPlanets;
+    }
+
+
 }
 
 class Ressources {
@@ -545,7 +700,7 @@ class Ressources {
             this.calcTotal();
         }
     }
-    isEmpty() {
+    get isEmpty() {
         return this.metal === 0 && this.crystal === 0 && this.deuterium === 0;
     }
     /**
@@ -620,6 +775,15 @@ class ReportInfo {
 
         this.parseMessage(msg);
     }
+    /**PROPERTIES */
+    
+    get coordUrl() {
+        var result = "";
+        if (this.coord !== "") {
+            result = '<a href="' + coordToUrl(this.coord) + '">'+this.coord+'</a>';
+        }
+        return result;
+    }
     /***** METHODS *****/ 
     equal(info) {
         return (this.apiKey !== null && info.apiKey !== null && this.apiKey == info.apiKey) ||
@@ -685,7 +849,7 @@ class ReportInfo {
             }
         }
         return result;
-    };
+    }
     readMoon(msg) {
         // get isPlanet or isMoon
         var result = false;
@@ -725,7 +889,7 @@ class Report {
         var date = "";
         if (this.info)
         {
-            coord = this.info.coord;
+            coord = this.info.coordUrl;
             date = formatDate(this.info.date);
         }
         return '<tr><td>'+name+'</td><td>'+coord+'</td><td>'+date+'</td><td>'+ress.metal.toLocaleString()+'</td><td>'+ress.crystal.toLocaleString()+'</td><td>'+ress.deuterium.toLocaleString()+'</td></tr>';
@@ -1544,7 +1708,7 @@ class FarmList {
      * @param {Report} report 
      */
     add(report) {
-        if ((!report.ressources) || (report.ressources.isEmpty())) {
+        if ((!report.ressources) || (report.ressources.isEmpty)) {
             return;
         }
         var farm = this.findFarm(report.defenderName, report.info.coord);
@@ -1618,7 +1782,10 @@ class FarmReport extends Report {
     }
 
     getRow() {
-        return '<tr><td>' + this.name + '</td><td>' + this.ressources.metal.toLocaleString() + '</td><td>' + this.ressources.crystal.toLocaleString() + '</td><td>' + this.ressources.deuterium.toLocaleString() + '</td></tr>';
+        if (!this.ressources.isEmpty)
+            return '<tr><td>' + this.name + '</td><td>' + this.ressources.metal.toLocaleString() + '</td><td>' + this.ressources.crystal.toLocaleString() + '</td><td>' + this.ressources.deuterium.toLocaleString() + '</td></tr>';
+        else
+            return "";
     }
     /**
      * 
@@ -2085,7 +2252,11 @@ class TotalRessources {
                 else
                     ress = report.ressources; // recycleReports
                 if (ress) {
-                    this.ressources.add(ress);
+                    if (!report.isDefender) {
+                        this.ressources.add(ress);
+                    } else {
+                        this.lostRessources.add(report.ressourcesLoot);
+                    }
                     if (report.ressourcesLost)
                         this.lostRessources.add(report.ressourcesLost);
                     if (calculateRess) {
@@ -2402,14 +2573,18 @@ function testIt() {
     {
         try
         {
-            
             //getLocalStorageSize(DEBUG);
 
             //var localization = new ApiLocalizationList();
             //localization.load();
 
-            //var playerData = new ApiPlayerList();
-            //playerData.load();
+            var playerData = new ApiPlayerList();
+            //playerData.loadFromLocalStorage();
+            if (playerData.length === 0) {
+                playerData.load();
+                playerData.saveToLocalStorage();
+            }
+            log(playerData);
         }
         catch (ex)
         {
@@ -2510,7 +2685,7 @@ function coordToUrl(coord)
 {
 	 var coordClean = coord.substring(1, coord.length-1);
 	 var coordTab = coordClean.split(":");
-	 return '/game/index.php?page=galaxy&galaxy='+coordTab[0]+'&system='+coordTab[1]+'&position='+coordTab[2] ;
+	 return serverUrl + '/game/index.php?page=galaxy&galaxy='+coordTab[0]+'&system='+coordTab[1]+'&position='+coordTab[2] ;
 }
 
 function checkAttackSendShips()
@@ -2760,7 +2935,7 @@ function display() {
         addEventListener("Total-RessourcesClick", function() {
             var reports = main.getRessourceReports(null);
             reports.sortByDateDesc();
-            reports.show(el => el.info.date.getTime() > getBashTimespan() && el.defenderName != 'Unknown' && el.defenderName != playerName, "Total-Ressources");
+            reports.show(el => el.info.date.getTime() > settings.raidRessTimespan.getTime() && el.defenderName != 'Unknown' && el.defenderName != playerName, "Total-Ressources");
         });
         addEventListener("FarmsClick", function() {
             main.showFarmReports(new Date(), settings.farmEndDate);
@@ -2905,7 +3080,7 @@ function getMessageAsync() {
         {
             return $.ajax({
                 type:     'POST',
-                url:      '/game/index.php?page=messages',
+                url:      serverUrl + '/game/index.php?page=messages',
                 data:     'messageId=-1&tabid='+asyncHelper.tabId+'&action=107&pagination='+asyncHelper.currentPage+'&ajax=1',
                 dataType: 'html',
                 context:  document.body,
@@ -2986,7 +3161,7 @@ function getMessageDetailsAsync(msgId) {
     {
         return $.ajax({
             type:     'GET',
-            url:      '/game/index.php?page=messages',
+            url:      serverUrl + '/game/index.php?page=messages',
             data:     'messageId='+msgId+'&tabid='+TABID_COMBAT_REPORT+'&ajax=1',
             dataType: 'html',
             context:  document.body,
@@ -3155,7 +3330,6 @@ function loadData()
             settings.lastCheckSpyReport = getBashTimespan();
             loadInfo();
         }
-        log(main.spyReports.getStatus(main.combatReports.reports[0]));
     } 
     catch (ex) {
         console.log("Error on loadData: " + ex);    
@@ -3360,12 +3534,16 @@ function resetCookies()
 function setStatus(msg)
 {
     var text = msg;
-    if (asyncHelper.started())
-        text += ' page ' + asyncHelper.currentPage;
-    if (!msg.includes(ERROR))
-        text += '...';
-    var span = createSpanStatus(text);
-    replaceElement(DIV_STATUS_GIF_ID, SPAN_STATUS_ID, span);
+    try {
+        if (asyncHelper.started())
+            text += ' page ' + asyncHelper.currentPage;
+        if (!msg.includes(ERROR))
+            text += '...';
+        var span = createSpanStatus(text);
+        replaceElement(DIV_STATUS_GIF_ID, SPAN_STATUS_ID, span);
+    } catch (error) {
+        console.error("Error on setStatus: " + error);   
+    }
 }
 
 function setTranslationVars(aTitle1, aTitle2, aTitle3, aCaptionAttack, aCaptionAttacks)
