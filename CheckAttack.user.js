@@ -647,7 +647,9 @@ class OGameAPI {
         return ownPlanets;
     }
 
+    static searchPlayerByCoords(coord) {
 
+    }
 }
 
 class Ressources {
@@ -1029,7 +1031,7 @@ class ReportList {
      * @param {Report} report 
      */
     onNewReport(report) { 
-        log("wrong function"); //implement to assign another function
+        //implement to assign another function
     }
     /**
      * Will remove the Report from the list
@@ -1596,6 +1598,7 @@ class Farm {
     constructor(obj) {
         this.infoList = [];
         this.name = "";
+        this.playerId = -1;
         this.updated = false;
         
         this.setValues(obj);
@@ -2376,7 +2379,7 @@ var asyncHelper = {
     }
 };
 
-/** Main object to handle the data */
+/** Main object to handle the data */ //TODO: convert to a es6 class
 var main = {
     combatReports: new CombatReportList(),
     farms: new FarmList("FarmList"),
@@ -2394,7 +2397,6 @@ var main = {
     _onNewReport: function(report) {
         try
         {
-            log('new report add to farms');
             main.farms.add(report);
         }
         catch (ex)
@@ -2578,13 +2580,13 @@ function testIt() {
             //var localization = new ApiLocalizationList();
             //localization.load();
 
-            var playerData = new ApiPlayerList();
+            //var playerData = new ApiPlayerList();
             //playerData.loadFromLocalStorage();
-            if (playerData.length === 0) {
-                playerData.load();
-                playerData.saveToLocalStorage();
-            }
-            log(playerData);
+            //if (playerData.length === 0) {
+            //    playerData.load();
+            //    playerData.saveToLocalStorage();
+            //}
+            //log(playerData);
         }
         catch (ex)
         {
@@ -3008,8 +3010,8 @@ function flatten(obj) {
 
 function formatDate(d)
 {
-    return        [(getNumberLeadingZeros(d.getDate(), 2),
-                    getNumberLeadingZeros(d.getMonth()+1), 2),
+    return        [ getNumberLeadingZeros(d.getDate(), 2),
+                    getNumberLeadingZeros(d.getMonth()+1, 2),
                     d.getFullYear()].join('-') +
                     ' ' +
                   [ getNumberLeadingZeros(d.getHours(), 2),
@@ -3631,8 +3633,9 @@ function startScript()
         //addCssLink('https://github.com/GeneralAnasazi/OGame-CheckAttack/blob/master/CheckAttackStyles.css');
         // button for checking
         var btn = createButton("Check Raid", "menubutton");
-        btn.addEventListener('click', function(){ loadInfo() ;}, false);
-        var btnSettings = createButton('<div class="menuImage overview highlighted"></div>', "");
+        btn.addEventListener('click', function(){ loadInfo() ;}, false); //background-color: rgba(255, 255, 255, 0.9); 
+        var icon = '<img height="26" width="26" alt="Settings" src="data:image/png;base64,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" />';
+        var btnSettings = createButton('<div style="overflow: hidden; width: 26px; height: 26px; border-radius: 5px;"><div style="border: 1px solid black; border-radius: 5px; width: 26px; height: 26px;">'+icon+'</div></div>', "");
         var span = document.createElement("span");
         span.className = "menu_icon";
         span.appendChild(btnSettings);
