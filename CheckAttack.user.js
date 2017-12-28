@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.4.0.0
+// @version 3.4.0.1
 // @grant       GM_xmlhttpRequest
 // @require     http://ajax.googleapis.com/ajax/libs/jquery/2.1.0/jquery.min.js
 
@@ -634,7 +634,7 @@ class ApiServerSettings extends StoragePropertyLoader {
 
     updateNeeded() {
         var obj = OGameAPI.getApiHead("serverData.xml");
-        return (obj && obj.date.getTime() > this.timestamp);
+        return (obj && obj.date.getTime() > (new Date(this.timestamp).getTime()));
     }
 
     load() {
@@ -2654,6 +2654,7 @@ var ressourceTitles = {
 // settings object
 var settings = new CASettings();
 var serverData = new ApiServerSettings();
+log(serverData);
 
 //#endregion
 
