@@ -19,19 +19,13 @@ const ERROR = 'Error';
 const TABID_SPY_REPORT = 20;
 const TABID_COMBAT_REPORT = 21; // combat report
 
-//TODO: look for other universe with included espionage attacks
-const UNIVERSE_ESPIONAGE_ATTACKS = [
-    { universeId: "s150", language: "de" },
-    { universeId: "s151", language: "de" }
-];
-
 const DIV_DIALOG_PLACEHOLDER = "id_check_attack_dialog_div";
 const DIV_STATUS_GIF_ID = "id_check_attack_status_div";
 const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to be set after an update
-const VERSION_SCRIPT = '3.4.0.0';
+const VERSION_SCRIPT = '3.4.0.1';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.4.0.0';
 
@@ -195,17 +189,43 @@ class PropertyLoader {
         }
     }
     setProperties(obj) {
-        for (var key in obj.keys) {
-            if (obj[key])
+        var keys = Object.keys(obj);
+        for (var i = 0; i < keys.length; i++) {
+            var key = keys[i];
+            if (obj[key]) {
                 this[key] = obj[key];
+            }
         }
     }
 }
 
-class CASettings extends PropertyLoader {
+class StoragePropertyLoader extends PropertyLoader {
+    constructor(storageKey) {
+        super();
+        this.storageKey = storageKey;
+    }
+
+    //** METHODS */
+    loadFromLocalStorage() {
+        if (this.storageKey) {
+            var obj = loadFromLocalStorage(this.storageKey);
+            if (obj)
+            {
+                this.setProperties(obj);
+                return obj; // for later use
+            }
+        }
+    }
+    saveToLocalStorage() {
+        if (this.storageKey)
+            writeToLocalStorage(this, this.storageKey);
+    }
+}
+
+class CASettings extends StoragePropertyLoader {
     
     constructor() {
-        super();
+        super('Settings');
         this.farmDays = 7;
         // last readed message from combat report
         this.lastCheckCombatReport = getBashTimespan();
@@ -224,20 +244,10 @@ class CASettings extends PropertyLoader {
     }
     get farmEndDate() { return getTodayDays(this.farmDays * -1); }
     get raidRessTimespan() { return getTodayHours(this.raidRessHours * -1); }
-    get storageKey() { return 'Settings'; }
 
-    //** METHODS */
-    loadFromLocalStorage() {
-        var obj = loadFromLocalStorage(this.storageKey);
-        if (obj)
-        {
-            this.checkSetValues(obj, [
-                "farmDays", "lastCheckCombatReport", "lastCheckSpyReport", "lastVersion", "raidRessHours"]);
-        }
-    }
     saveToLocalStorage() {
         this.lastVersion = VERSION_SCRIPT;
-        writeToLocalStorage(this, this.storageKey);
+        super.saveToLocalStorage();
     }
 }
 
@@ -414,6 +424,10 @@ class ApiList extends List {
         this.xmlFile = xmlFile;
     }
 
+    /**
+     * 
+     * @param {Str} xmlFile 
+     */
     checkUpdates(xmlFile) {
         var file = xmlFile;
         if (!file)
@@ -433,6 +447,10 @@ class ApiList extends List {
             file = this.xmlFile; 
         OGameAPI.getApiXml(file, async, this.loadFinished, this);
     }
+    /**
+     * will be called after an assynchrone load is done
+     * @param {XMLDocument} doc 
+     */
     loadFinished(doc) {
         //implement to override
     }
@@ -568,6 +586,74 @@ class ApiPlayerList extends ApiList {
         var obj = super.loadFromLocalStorage();
         if (obj) {
             this.loadTimestamp = obj.loadTimestamp;
+        }
+    }
+}
+
+class ApiServerSettings extends StoragePropertyLoader {
+    constructor () {
+        super('ApiServerSettings');
+
+        this.timestamp = null; //api overall
+        
+        this.name = null;
+        this.number = -1;
+        this.language = null;
+        this.timezone = null;
+        this.timezoneOffset = null;
+        this.domain = null;
+        this.version = null;
+        this.speed = -1;
+        this.speedFleet = -1;
+        this.galaxies = -1;
+        this.systems = -1;
+        this.acs = null;
+        this.rapidFire = null;
+        this.defToTF = null;
+        this.debrisFactor = -1;
+        this.debrisFactorDef = -1;
+        this.repairFactor = -1;
+        this.newbieProtectionLimit = -1;
+        this.newbieProtectionHigh = -1;
+        this.topScore = -1;
+        this.bonusFields = -1;
+        this.donutGalaxy = null;
+        this.donutSystem = null;
+        this.wfEnabled = null;
+        this.wfMinimumRessLost = -1;
+        this.wfMinimumLossPercentage = -1;
+        this.wfBasicPercentageRepairable = -1;
+        this.globalDeuteriumSaveFactor = -1;
+        this.bashlimit = null;
+        this.probeCargo = -1;
+
+        this.load();
+    }
+
+    get probeAttacks() { return this.probeCargo > 0; }
+
+    updateNeeded() {
+        var obj = OGameAPI.getApiHead("serverData.xml");
+        return (obj && obj.date.getTime() > this.timestamp);
+    }
+
+    load() {
+        this.loadFromLocalStorage();
+        if (this.updateNeeded()) {
+            log("serverData.xml update needed");
+            var doc = OGameAPI.getApiXml("serverData.xml", false);
+            if (doc) {
+                this.timestamp = doc.documentElement.getAttribute("timestamp");
+                for (var i = 0; i < doc.documentElement.childNodes.length; i++) {
+                    var child = doc.documentElement.childNodes[i];
+                    if (isNaN(child.innerHTML))
+                        this[child.nodeName] = child.innerHTML;
+                    else {
+                        this[child.nodeName] = parseFloat(child.innerHTML);
+                    }
+                }
+                this.saveToLocalStorage();
+            }
         }
     }
 }
@@ -1321,7 +1407,7 @@ class CombatReport extends Report {
         return result;
     }
     isBash() {
-        if (UNIVERSE_ESPIONAGE_ATTACKS.find(el => el.universeId = universeId))
+        if (serverData.probeAttacks)
             return parseInt(this.status) > parseInt(bashState.ESPIONAGE_NO_DETAILS);
         else
             return parseInt(this.status) > parseInt(bashState.ESPIONAGE_PROBE_ATTACK);
@@ -2567,6 +2653,7 @@ var ressourceTitles = {
 
 // settings object
 var settings = new CASettings();
+var serverData = new ApiServerSettings();
 
 //#endregion
 
@@ -2587,6 +2674,7 @@ function testIt() {
             //    playerData.saveToLocalStorage();
             //}
             //log(playerData);
+
         }
         catch (ex)
         {
