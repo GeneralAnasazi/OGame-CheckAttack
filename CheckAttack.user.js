@@ -30,7 +30,7 @@ const VERSION_SCRIPT = '3.4.0.1';
 const VERSION_SCRIPT_RESET = '3.4.0.0';
 
 // debug consts
-const RELEASE = true;
+const RELEASE = false;
 const DEBUG = true && !RELEASE; // set it to true enable debug messages -> log(msg)
 const RESET_COOKIES = false && !RELEASE;
 
