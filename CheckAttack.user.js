@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.4.0.2
+// @version 3.4.0.3
 // @grant       GM_xmlhttpRequest
 // @require     http://ajax.googleapis.com/ajax/libs/jquery/2.1.0/jquery.min.js
 
@@ -25,7 +25,7 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to be set after an update
-const VERSION_SCRIPT = '3.4.0.2';
+const VERSION_SCRIPT = '3.4.0.3';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.4.0.0';
 
@@ -2279,8 +2279,13 @@ class SpyReportList extends ReportList {
             else {
                 if (this.isInactive(report))
                     result = bashState.INACTIVE_PLAYER;
-                else
-                    result = bashState.NO_DETAILS;
+                else {
+                    // total lost will count only on probe with cargo universes
+                    if (serverData.probeAttacks)
+                        result = bashState.NO_DETAILS;
+                    else
+                        result = ESPIONAGE_NO_DETAILS;
+                }
             }
         }
         return result;
