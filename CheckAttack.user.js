@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.4.0.3
+// @version 3.4.0.4
 // @grant       GM_xmlhttpRequest
 // @require     http://ajax.googleapis.com/ajax/libs/jquery/2.1.0/jquery.min.js
 
@@ -25,7 +25,7 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to be set after an update
-const VERSION_SCRIPT = '3.4.0.3';
+const VERSION_SCRIPT = '3.4.0.4';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.4.0.0';
 
@@ -220,6 +220,52 @@ class StoragePropertyLoader extends PropertyLoader {
         if (this.storageKey)
             writeToLocalStorage(this, this.storageKey);
     }
+}
+
+class XmlSerializer {
+    constructor(doc) {
+        this.doc = doc;
+    }
+
+    getParsedValue(value) {
+
+    }
+    /**
+     * 
+     * @param {Node} node 
+     */
+    getSerializeType(node) {
+        var result = -1;
+        if (node.hasChildNodes) {
+            result = 2; //object
+            var name = node.firstChild.nodeName;
+            if (node.getElementsByTagName(name).length > 1) {
+                result = 3; //list
+            }
+        } else {
+            if (node.hasAttributes)
+                result = 1; //node with attributes 
+            else
+                result = 0; //only properties
+        }
+        return result;
+    }
+
+    parseObject(node, obj) {
+        var type = this.getSerializeType(node);
+        switch (type) {
+            case 0:
+                obj[node.nodeName] = node.innerHTML;
+                break;
+            case 1:
+                
+                break;
+        }
+    }
+    serialize(obj) {
+
+    }
+
 }
 
 class CASettings extends StoragePropertyLoader {
@@ -634,7 +680,7 @@ class ApiServerSettings extends StoragePropertyLoader {
 
     updateNeeded() {
         var obj = OGameAPI.getApiHead("serverData.xml");
-        return (obj && obj.date.getTime() > (new Date(this.timestamp).getTime()));
+        return (obj && obj.date && obj.date.getTime() > (new Date(this.timestamp).getTime()));
     }
 
     load() {
@@ -689,18 +735,19 @@ class OGameAPI {
         var arr = responseHeader.split("\n");
         for (var i = 0; i < arr.length; i++) {
             var values = arr[i].split(": ");
-            if (values[0] !== "") {
-                switch (values[0]) {
+            var keyName = values[0].toLowerCase();
+            if (keyName !== "") {
+                switch (keyName) {
                     case "content-length":
-                        result[values[0]] = parseInt(values[1]);
+                        result[keyName] = parseInt(values[1]);
                         break;
                     case "date":
                     case "expires":
                     case "last-modified":
-                        result[values[0]] = new Date(values[1]);
+                        result[keyName] = new Date(values[1]);
                         break;
                     default:
-                        result[values[0]] = values[1];
+                        result[keyName] = values[1];
                         break;
                 }
             }
@@ -732,7 +779,13 @@ class OGameAPI {
 
         return ownPlanets;
     }
+    static serializeXml(doc, obj) {
 
+        var nodes = doc.documentElement.childNodes;
+        for (var i = 0; i < nodes.length; i++) {
+
+        }
+    }
     static searchPlayerByCoords(coord) {
 
     }
@@ -1258,6 +1311,13 @@ class CombatReport extends Report {
     }
 
     /***** METHODS *****/ 
+    
+    /**
+     * calculates the losses of an Combat Report
+     * @param {Array} units
+     * @param {Array} [repairedDefense]
+     * @returns {Ressources} the lost ressources
+     */
     calcLosses(units, repairedDefense) {
         var result = new Ressources();
         for (var id in units)
@@ -1311,6 +1371,11 @@ class CombatReport extends Report {
         }
         return result;
     }
+    /**
+     * 
+     * @param {SpyReportList} spyReportList 
+     * @param {CombatReportList} reportList 
+     */
     detailsLoaded(spyReportList, reportList) {
         var result = false;
         if (this.details)
