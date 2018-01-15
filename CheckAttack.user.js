@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.4.0.7
+// @version 3.4.0.8
 // @grant       GM_xmlhttpRequest
 // @require     http://ajax.googleapis.com/ajax/libs/jquery/2.1.0/jquery.min.js
 
@@ -25,7 +25,7 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to be set after an update
-const VERSION_SCRIPT = '3.4.0.7';
+const VERSION_SCRIPT = '3.4.0.8';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.4.0.0';
 
@@ -42,7 +42,7 @@ const MOON_GIF_SRC = "data:image/gif;base64,R0lGODlhHgAeANU/AIORnBQoOjxMWRQmNiEz
 
 //#region  Global Vars
 //test vars
-var test = true && !RELEASE;
+var test = false && !RELEASE;
 var cssTest = false && !RELEASE;
 
 // globale vars
@@ -232,6 +232,66 @@ class ObservableObject extends Observable {
     }
 }
 
+class List extends Array {
+    /**
+     * 
+     * @param {String} storageKey 
+     */
+    constructor(storageKey) {
+        super();
+        this.updated = false;
+        this.storageKey = storageKey;
+    }
+
+    add(item) {
+        this.push(item);
+        this.updated = true;
+    }
+    getNewItem(item) {
+        //implement to ovverride
+        return null;
+    }
+    contains(item) {
+        return this.find(el => !el.id && el.id == item.id);
+    }
+    /**
+     * @returns {object} The loaded object from the Local Storage
+     */
+    loadFromLocalStorage() {
+        if (this.storageKey) {
+            var obj = loadFromLocalStorage(this.storageKey);
+            if (obj) {
+                for (var i = 0; i < obj.length; i++) {
+                    var item = this.getNewItem(obj[i]);
+                    this.add(item);
+                }
+                this.updated = false;
+            }
+            return obj;
+        } else {
+            return null;
+        }
+    }
+    remove(item) {
+        var idx = this.findIndex(el => !el.id && el.id == item.id);
+        if (idx > -1)
+            this.splice(idx, 1);
+    }
+    removeFromLocalStorage() {
+        if (this.storageKey)
+            deleteValueLocalStorage(this.storageKey);
+    }
+    saveToLocalStorage() {
+        var result = false;
+        if (this.updated && this.storageKey) {
+            this.updated = false;
+            writeToLocalStorage(this, this.storageKey);
+            result = true;
+        }
+        return result;
+    }
+}
+
 class PropertyLoader extends Observable {
     constructor() {
         super();
@@ -255,7 +315,9 @@ class PropertyLoader extends Observable {
         for (var i = 0; i < keys.length; i++) {
             var key = keys[i];
             if (obj[key]) {
-                if (obj[key] instanceof Object) {
+                if (obj[key] instanceof Array) {
+                    this[key] = obj[key];
+                } else if (obj[key] instanceof Object) {
                     if (!this[key])
                         this[key] = new PropertyLoader();
                     this[key].setProperties(obj[key]);
@@ -306,6 +368,8 @@ class ApiLoader extends StoragePropertyLoader {
      * load the header of the file and checks the last-modified value for an update
      */
     get apiUpdateNeeded() {
+        if (test)
+            return true;
         if (this.xmlHeader === null || (this.xmlHeader !== null && new Date(this.xmlHeader.expires).getTime() < (new Date().getTime()))) {
             if (this.xmlHeader === null)
                 log("Xml Head not loaded for file " + this.xmlFile);
@@ -528,66 +592,6 @@ class ApiPlanet extends ApiDefaultObject {
             this.coord = node.getAttribute("coords");
             this.moon = node.childNodes[0] ? true : false;
         }
-    }
-}
-
-class List extends Array {
-    /**
-     * 
-     * @param {String} storageKey 
-     */
-    constructor(storageKey) {
-        super();
-        this.updated = false;
-        this.storageKey = storageKey;
-    }
-
-    add(item) {
-        this.push(item);
-        this.updated = true;
-    }
-    getNewItem(item) {
-        //implement to ovverride
-        return null;
-    }
-    contains(item) {
-        return this.find(el => !el.id && el.id == item.id);
-    }
-    /**
-     * @returns {object} The loaded object from the Local Storage
-     */
-    loadFromLocalStorage() {
-        if (this.storageKey) {
-            var obj = loadFromLocalStorage(this.storageKey);
-            if (obj) {
-                for (var i = 0; i < obj.length; i++) {
-                    var item = this.getNewItem(obj[i]);
-                    this.add(item);
-                }
-                this.updated = false;
-            }
-            return obj;
-        } else {
-            return null;
-        }
-    }
-    remove(item) {
-        var idx = this.findIndex(el => !el.id && el.id == item.id);
-        if (idx > -1)
-            this.splice(idx, 1);
-    }
-    removeFromLocalStorage() {
-        if (this.storageKey)
-            deleteValueLocalStorage(this.storageKey);
-    }
-    saveToLocalStorage() {
-        var result = false;
-        if (this.updated && this.storageKey) {
-            this.updated = false;
-            writeToLocalStorage(this, this.storageKey);
-            result = true;
-        }
-        return result;
     }
 }
 
@@ -961,8 +965,8 @@ class XmlLoader extends ApiLoader {
         super.load(async);
     }
     loadApiFinished(doc, self) {
-        super.loadApiFinished(doc, self);
         XmlSerializer.parseObject(doc.documentElement, self);
+        super.loadApiFinished(doc, self);
     }
 }
 
@@ -2179,7 +2183,6 @@ class FarmList {
     loadFromLocalStorage() {
         if (this._storageKey) {
             var obj = loadFromLocalStorage(this._storageKey);
-            log(obj);
             if (obj) {
                 for (var i = 0; i < obj.items.length; i++) {
                     var farm = new Farm();
@@ -2621,7 +2624,7 @@ class SpyReportList extends ReportList {
                     if (ogameApi.serverData.probeAttacks)
                         result = bashState.NO_DETAILS;
                     else
-                        result = ESPIONAGE_NO_DETAILS;
+                        result = bashState.ESPIONAGE_NO_DETAILS;
                 }
             }
         }
@@ -2644,8 +2647,8 @@ class SpyReportList extends ReportList {
         if (filterArr[0] && filterArr[0].inactive) {
             result = true;
         } else if (ogameApi.players) {
-            var idx = ogameApi.players.findIndex(el => el.name == report.defenderName);
-            result = (idx > -1) && (ogameApi.players[idx].status && ogameApi.players[idx].status.toLowerCase() == "i");
+            var idx = ogameApi.players.players.findIndex(el => el.name == report.defenderName);
+            result = (idx > -1) && (ogameApi.players.players[idx].status && ogameApi.players.players[idx].status.toLowerCase() == "i");
         }
 
         return result;
@@ -3748,9 +3751,9 @@ function loadData()
     try 
     {
         // init api files
-        ogameApi.loadFromLocalStorage();
         ogameApi.loadServerSettings();
-        ogameApi.players.load(true);
+        ogameApi.players.load(false);
+        log(ogameApi);
 
         localeSettings.load();
         translate();
@@ -3775,13 +3778,12 @@ function loadFromLocalStorage(key)
     var json = window.localStorage.getItem('CheckAttack_' + key);
     if (json != 'no value' && json)
     {
-        try
+        try 
         {
             result = JSON.parse(json);
         }
-        catch (ex)
-        {
-            console.log('Error on loadFromLocalStorage(' + key + '): ' + ex);
+        catch (ex) {
+            console.error('Error on loadFromLocalStorage(' + key + '): ' + ex);
         }
     }
     return result;
@@ -4144,7 +4146,11 @@ function versionCheck()
     }
 }
 
-/** write an object to the local storage */
+/** 
+ * write an object to the local storage 
+ * @param {Object} obj
+ * @param {String} key the storage key
+ * */
 function writeToLocalStorage(obj, key)
 {
     var json = JSON.stringify(obj);
@@ -4153,7 +4159,9 @@ function writeToLocalStorage(obj, key)
         var testObj = JSON.parse(json);
         window.localStorage.setItem('CheckAttack_' + key, json);
     }
-    catch (ex) {} // do nothing, but prevent error messages
+    catch (ex) {
+        console.error("Error on writeToLocalStorage: " + ex);
+    } 
 }
 
 //#endregion
