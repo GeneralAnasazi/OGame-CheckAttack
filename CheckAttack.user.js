@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.4.0.6
+// @version 3.4.0.7
 // @grant       GM_xmlhttpRequest
 // @require     http://ajax.googleapis.com/ajax/libs/jquery/2.1.0/jquery.min.js
 
@@ -25,7 +25,7 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to be set after an update
-const VERSION_SCRIPT = '3.4.0.6';
+const VERSION_SCRIPT = '3.4.0.7';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.4.0.0';
 
@@ -255,9 +255,11 @@ class PropertyLoader extends Observable {
         for (var i = 0; i < keys.length; i++) {
             var key = keys[i];
             if (obj[key]) {
-                if (obj[key] instanceof Object)
-                    this.setProperties(obj[key])
-                else {
+                if (obj[key] instanceof Object) {
+                    if (!this[key])
+                        this[key] = new PropertyLoader();
+                    this[key].setProperties(obj[key]);
+                } else {
                     this[key] = obj[key];
                 }
             }
@@ -304,9 +306,15 @@ class ApiLoader extends StoragePropertyLoader {
      * load the header of the file and checks the last-modified value for an update
      */
     get apiUpdateNeeded() {
-        if (this.xmlHeader === null || (this.xmlHeader !== null && new Date(this.xmlHeader.expires).getTime() < (new Date().getTime())))
+        if (this.xmlHeader === null || (this.xmlHeader !== null && new Date(this.xmlHeader.expires).getTime() < (new Date().getTime()))) {
+            if (this.xmlHeader === null)
+                log("Xml Head not loaded for file " + this.xmlFile);
             this.xmlHeader = ApiHelper.getApiHead(this.xmlFile);
-        return (this.xmlHeader && this.xmlHeader.last_modified && new Date(this.xmlHeader.expires).getTime() < (new Date().getTime()));
+            return true;
+        } else {
+            return (this.xmlHeader && new Date(this.xmlHeader.expires).getTime() < (new Date().getTime())) || 
+                   (this.lastModified.getTime() < new Date(this.xmlHeader.last_modified).getTime());
+        }
     }
 
     get lastModified() { return new Date(this.timestamp * 1000); }
@@ -1029,7 +1037,7 @@ class OGameAPI extends ObservableObject {
     }
     /**
      * will be called after a load of a xml is finished
-     * @param {XmlLoader} loader 
+     * @param {XmlLoader} observable 
      */
     loadXmlFinished(observable, eventType, data) {
         try {
@@ -1040,6 +1048,7 @@ class OGameAPI extends ObservableObject {
             if (this.loadCount == -1 && this.async) {
                 this.loadFinished();
             }
+            observable.saveToLocalStorage();
         } catch (e) {
             console.error("Error on loadXmlFinished: " + e);
         }
@@ -1049,6 +1058,8 @@ class OGameAPI extends ObservableObject {
         this.localization.saveToLocalStorage();
         this.players.saveToLocalStorage();
         this.serverData.saveToLocalStorage();
+        this.universe.saveToLocalStorage();
+        this.universes.saveToLocalStorage();
     }
 }
 
@@ -1737,7 +1748,7 @@ class CombatReport extends Report {
         return result;
     }
     isBash() {
-        if (serverData.probeAttacks)
+        if (ogameApi.serverData.probeAttacks)
             return parseInt(this.status) > parseInt(bashState.ESPIONAGE_NO_DETAILS);
         else
             return parseInt(this.status) > parseInt(bashState.ESPIONAGE_PROBE_ATTACK);
@@ -2607,7 +2618,7 @@ class SpyReportList extends ReportList {
                     result = bashState.INACTIVE_PLAYER;
                 else {
                     // total lost will count only on probe with cargo universes
-                    if (serverData.probeAttacks)
+                    if (ogameApi.serverData.probeAttacks)
                         result = bashState.NO_DETAILS;
                     else
                         result = ESPIONAGE_NO_DETAILS;
@@ -2624,7 +2635,7 @@ class SpyReportList extends ReportList {
         var result = false;
         // try to find the nearest spy report (max 1 day backwards)
         var lastSearchDate = getBashTimespan();
-        lastSearchDate.addHours(-1);
+        lastSearchDate.addHours(-3);
         var filterArr = this.reports.filter(el => report.info.date.getTime() > el.info.date.getTime() &&
             (el.info.coord == report.info.coord || el.playerName == report.defenderName) &&
             el.info.date.getTime() > lastSearchDate.getTime());
@@ -2632,7 +2643,11 @@ class SpyReportList extends ReportList {
         // has filter results and is inactive
         if (filterArr[0] && filterArr[0].inactive) {
             result = true;
+        } else if (ogameApi.players) {
+            var idx = ogameApi.players.findIndex(el => el.name == report.defenderName);
+            result = (idx > -1) && (ogameApi.players[idx].status && ogameApi.players[idx].status.toLowerCase() == "i");
         }
+
         return result;
     }
     /**
@@ -2739,9 +2754,6 @@ class TotalRessources {
 }
 
 //#endregion
-
-var sendFleetList = new SendFleetList();
-var sendFleetPage = -1;
 
 //#region global Objects
 // async object
@@ -2861,7 +2873,7 @@ var main = {
             this.farms.addRange(this.combatReports);
             this.farms.addRange(this.recycleReports);
         }
-        log(this.farms);
+        //log(this.farms);
     },
     save: function() {
         this.spyReports.saveToLocalStorage();
@@ -2983,8 +2995,10 @@ var ressourceTitles = {
 };
 
 // settings object
+var ogameApi = new OGameAPI(false);
+var sendFleetList = new SendFleetList();
+var sendFleetPage = -1;
 var settings = new CASettings();
-var serverData = new ApiServerSettings();
 
 //#endregion
 
@@ -2994,16 +3008,6 @@ function testIt() {
         try
         {
             //getLocalStorageSize(DEBUG);
-
-            var api = new OGameAPI();
-            api.listen("onLoadFinished", function(observable, eventType, data) {
-                log("api loaded");
-            });
-            api.listen("onLoadXmlFinished", function(observable, eventType, data) {
-                log(data);
-            });
-            api.loadAll(true);
-
         }
         catch (ex) {
             console.log("Error Test Function: " + ex);
@@ -3743,6 +3747,11 @@ function loadData()
 {
     try 
     {
+        // init api files
+        ogameApi.loadFromLocalStorage();
+        ogameApi.loadServerSettings();
+        ogameApi.players.load(true);
+
         localeSettings.load();
         translate();
         settings.loadFromLocalStorage();
