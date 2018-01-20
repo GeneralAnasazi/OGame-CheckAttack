@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.4.0.8
+// @version 3.4.0.9
 // @grant       GM_xmlhttpRequest
 // @require     http://ajax.googleapis.com/ajax/libs/jquery/2.1.0/jquery.min.js
 
@@ -25,7 +25,7 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to be set after an update
-const VERSION_SCRIPT = '3.4.0.8';
+const VERSION_SCRIPT = '3.4.0.9';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.4.0.0';
 
@@ -42,8 +42,8 @@ const MOON_GIF_SRC = "data:image/gif;base64,R0lGODlhHgAeANU/AIORnBQoOjxMWRQmNiEz
 
 //#region  Global Vars
 //test vars
-var test = false && !RELEASE;
 var cssTest = false && !RELEASE;
+var test = false && !RELEASE;
 
 // globale vars
 var calculateRess = false;
@@ -359,6 +359,7 @@ class StoragePropertyLoader extends PropertyLoader {
 class ApiLoader extends StoragePropertyLoader {
     constructor(storageKey, xmlFile) {
         super(storageKey);
+        this.forceApiUpdate = false;
         this.timestamp = -1;
         this.xmlFile = xmlFile;
         this.xmlHeader = null;
@@ -368,7 +369,7 @@ class ApiLoader extends StoragePropertyLoader {
      * load the header of the file and checks the last-modified value for an update
      */
     get apiUpdateNeeded() {
-        if (test)
+        if (this.forceApiUpdate)
             return true;
         if (this.xmlHeader === null || (this.xmlHeader !== null && new Date(this.xmlHeader.expires).getTime() < (new Date().getTime()))) {
             if (this.xmlHeader === null)
@@ -406,6 +407,7 @@ class ApiLoader extends StoragePropertyLoader {
             }
         }
         loadApi(this, async);
+        this.forceApiUpdate = false;
     }
     /**
      * 
@@ -489,14 +491,14 @@ class XmlSerializer {
                 this.parseAttributes(node, obj);
                 break;
             case 2: //Object
-                obj[nodeName] = new List();
+                obj[nodeName] = {};
                 for (i = 0; i < node.childNodes.length; i++) {
                     this.parseObject(node.childNodes[i], obj[nodeName]);
                 }
                 this.parseAttributes(node, obj[nodeName]);
                 break;
             case 3: //List of Objects
-                obj[nodeName] = new List();
+                obj[nodeName] = [];
                 for (i = 0; i < node.childNodes.length; i++) {
                     var item = {};
                     this.parseObject(node.childNodes[i], item);
@@ -987,6 +989,21 @@ class OGameAPI extends ObservableObject {
         this.universes = this._initLoader("API_Universes", "universes.xml");
 
         this.loadFromLocalStorage();
+    }
+
+    get forceApiUpdate() {
+        return this.alliances.forceApiUpdate || this.localization.forceApiUpdate ||
+               this.players.forceApiUpdate || this.serverData.forceApiUpdate ||
+               this.universe.forceApiUpdate || this.universes.forceApiUpdate;
+    }
+
+    set forceApiUpdate(value) {
+        this.alliances.forceApiUpdate = value;
+        this.localization.forceApiUpdate = value;
+        this.players.forceApiUpdate = value;
+        this.serverData.forceApiUpdate = value;
+        this.universe.forceApiUpdate = value;
+        this.universes.forceApiUpdate = value;
     }
 
     /**
@@ -3751,11 +3768,12 @@ function loadData()
     try 
     {
         // init api files
+        ogameApi.forceApiUpdate = false;
         ogameApi.loadServerSettings();
         ogameApi.players.load(false);
         log(ogameApi);
 
-        localeSettings.load();
+        localeSettings.load(); //not needed
         translate();
         settings.loadFromLocalStorage();
         main.load();
