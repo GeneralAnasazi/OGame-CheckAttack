@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.4.0.4
+// @version 3.4.0.9
 // @grant       GM_xmlhttpRequest
 // @require     http://ajax.googleapis.com/ajax/libs/jquery/2.1.0/jquery.min.js
 
@@ -25,7 +25,7 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to be set after an update
-const VERSION_SCRIPT = '3.4.0.4';
+const VERSION_SCRIPT = '3.4.0.9';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.4.0.0';
 
@@ -34,20 +34,24 @@ const RELEASE = true;
 const DEBUG = true && !RELEASE; // set it to true enable debug messages -> log(msg)
 const RESET_COOKIES = false && !RELEASE;
 
+// images/icons
+const ICO_CHECK_ATTACK = "data:image/png;base64,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";
+const MOON_GIF_SRC = "data:image/gif;base64,R0lGODlhHgAeANU/AIORnBQoOjxMWRQmNiEzQx4wQGRyfk1caBorO0lZZUVWYkNSX3mGklppdRUnN4COmVVjcH6MlxMlNVJhbS49TXyKlTVFUn+NmF5seDJCUThIVnSDjoKQm2Z0gHOAjGt5hW18h3aEkHqIk3uJlCg5SCU4SHB+imFve1hnc3WEjzNEUmx6hjhHVVBfa2l3g299iC09SkdWYzZGVHKAix4wPyg5R2p4g11sdy9AUC8/TSc4RhcsPSo7TCs8STBATRUeKyH5BAEAAD8ALAAAAAAeAB4AAAb/wJ9wSCwaj8ii5YBqNFAJS3L6g4QA2Cx2dqAWDyPtZqbFjhbeH0YbafVqh0sZ0KAatI+WZDAIdOYAN0kNZQwwfAMOd4ATRwsAKBYCLgARGogaEYAAFwJGFygOEhI0IAAeAhQHFZtYH18hBKOjjwAcHK1ZnUQhGLN7MrmAJ0MqdIh8LZXCWiYlQjEAGwR8DjoMBiwQD8wAFRlCygAnJAg+ICIFAwgn3RwsQg0MNtIrDKcIDgMJ3QAaQhhi0FiEhUMLBwUodfv3owWLASy4gTgh4oEBUwAe4GoVQYWQBAcGkBDxoYCDHCawREAhIAFGQBt4CMnxoscjCw4COMhw4UGMrABACSic06HAEAwP7qnQGaDAGAJAgeLQNKfLkBxZbOQLMBUE1KgEPswJQaIIIRMiGlDIQMlS1AAlwhgQ8AdAoyI1IsQgsIHBPSwMNARth6FAAEIlj2h4EYNemQgGMHjAoiDAgQcpZCIRcG8Ehg5UdXEbcWUDDiow0BnOcAULBBUoshh45oXGhBMLNKTEskAGCA4gEuxIU2xChxl+GUQI0WEBAeJGcr4FCr36lCAAOw==";
+
 //#endregion
 
 //#region  Global Vars
-var test = true && !RELEASE;
+//test vars
 var cssTest = false && !RELEASE;
+var test = false && !RELEASE;
 
 // globale vars
 var calculateRess = false;
 var divDialogPlaceholder = createDiv(DIV_DIALOG_PLACEHOLDER);
-var language = document.getElementsByName('ogame-language')[0].content;
+var language = document.getElementsByName('ogame-language')[0].content; // readed from the api
 var playerName = document.getElementsByName('ogame-player-name')[0].content;
 var server = document.getElementsByName('ogame-universe')[0].content;
 var serverUrl = "https://" + server;
-var universeId = server.split("-")[0];
 
 // translation vars (don't translate here)
 var captionAttack = "attaque";
@@ -60,16 +64,18 @@ var title2 = "de bash";
 var title3 = "Risque de bash";
 var confirmResetData = "Wollen sie wirklich die gespeicherten Daten zurück setzen?";
 
+
 //#endregion
 
 //#region ENUMERATIONS
 
     var bashState = {
         UNDECLARED: -999,
-        OWN_DEFENSE: -3,
-        AKS_DEFENSE: -2,
-        NOTHING_FOUND: -1,
-        INACTIVE_PLAYER: 0,
+        OWN_DEFENSE: -4,
+        AKS_DEFENSE: -3,
+        NOTHING_FOUND: -2,
+        INACTIVE_PLAYER: -1,
+        ONLY_ESPIONAGE_PROBES: 0, // espionage with spyreport and details and 
         ESPIONAGE_NO_DETAILS: 1, // espionage but no details to look for the used ships
         ESPIONAGE_PROBE_ATTACK: 2, // only espionage probe
         ESPIONAGE_ATTACK: 3, // sended as espionage with battleships
@@ -171,8 +177,124 @@ String.prototype.trim = function (string)
 //#endregion
 
 //#region CLASSES
-class PropertyLoader {
+class Observable {
+    constructor () {}
+
+    listen(type, method, scope, context) {
+        var listeners, handlers;
+        if (!(listeners = this.listeners)) {
+            listeners = this.listeners = {};
+        }
+        if (!(handlers = listeners[type])){
+            handlers = listeners[type] = [];
+        }
+        scope = (scope ? scope : window);
+        handlers.push({
+            method: method,
+            scope: scope,
+            context: (context ? context : scope)
+        });
+    }
+    fireEvent(type, data, context) {
+        var listeners, handlers, i, n, handler, scope;
+        if (!(listeners = this.listeners)) {
+            return;
+        }
+        if (!(handlers = listeners[type])){
+            return;
+        }
+        for (i = 0, n = handlers.length; i < n; i++){
+            handler = handlers[i];
+            if (typeof(context) !== "undefined" && context !== handler.context) continue;
+            if (handler.method.call(
+                handler.scope, this, type, data
+            )===false) {
+                return false;
+            }
+        }
+        return true;
+    }
+}
+
+class ObservableObject extends Observable {
     constructor() {
+        super();
+    }
+
+    /**
+     * create an event listener
+     * @param {String} type 
+     * @param {Function} method 
+     * @param {Object} caller 
+     */
+    listen(type, method, caller) {
+        super.listen(type, method, caller ? caller : this, this);
+    }
+}
+
+class List extends Array {
+    /**
+     * 
+     * @param {String} storageKey 
+     */
+    constructor(storageKey) {
+        super();
+        this.updated = false;
+        this.storageKey = storageKey;
+    }
+
+    add(item) {
+        this.push(item);
+        this.updated = true;
+    }
+    getNewItem(item) {
+        //implement to ovverride
+        return null;
+    }
+    contains(item) {
+        return this.find(el => !el.id && el.id == item.id);
+    }
+    /**
+     * @returns {object} The loaded object from the Local Storage
+     */
+    loadFromLocalStorage() {
+        if (this.storageKey) {
+            var obj = loadFromLocalStorage(this.storageKey);
+            if (obj) {
+                for (var i = 0; i < obj.length; i++) {
+                    var item = this.getNewItem(obj[i]);
+                    this.add(item);
+                }
+                this.updated = false;
+            }
+            return obj;
+        } else {
+            return null;
+        }
+    }
+    remove(item) {
+        var idx = this.findIndex(el => !el.id && el.id == item.id);
+        if (idx > -1)
+            this.splice(idx, 1);
+    }
+    removeFromLocalStorage() {
+        if (this.storageKey)
+            deleteValueLocalStorage(this.storageKey);
+    }
+    saveToLocalStorage() {
+        var result = false;
+        if (this.updated && this.storageKey) {
+            this.updated = false;
+            writeToLocalStorage(this, this.storageKey);
+            result = true;
+        }
+        return result;
+    }
+}
+
+class PropertyLoader extends Observable {
+    constructor() {
+        super();
 
     }
 
@@ -193,7 +315,15 @@ class PropertyLoader {
         for (var i = 0; i < keys.length; i++) {
             var key = keys[i];
             if (obj[key]) {
-                this[key] = obj[key];
+                if (obj[key] instanceof Array) {
+                    this[key] = obj[key];
+                } else if (obj[key] instanceof Object) {
+                    if (!this[key])
+                        this[key] = new PropertyLoader();
+                    this[key].setProperties(obj[key]);
+                } else {
+                    this[key] = obj[key];
+                }
             }
         }
     }
@@ -217,26 +347,111 @@ class StoragePropertyLoader extends PropertyLoader {
         }
     }
     saveToLocalStorage() {
-        if (this.storageKey)
+        if (this.storageKey) {
+            var listeners = this.listeners;
+            this.listeners = undefined;
             writeToLocalStorage(this, this.storageKey);
+            this.listeners = listeners;
+        }
+    }
+}
+
+class ApiLoader extends StoragePropertyLoader {
+    constructor(storageKey, xmlFile) {
+        super(storageKey);
+        this.forceApiUpdate = false;
+        this.timestamp = -1;
+        this.xmlFile = xmlFile;
+        this.xmlHeader = null;
+    }
+
+    /**
+     * load the header of the file and checks the last-modified value for an update
+     */
+    get apiUpdateNeeded() {
+        if (this.forceApiUpdate)
+            return true;
+        if (this.xmlHeader === null || (this.xmlHeader !== null && new Date(this.xmlHeader.expires).getTime() < (new Date().getTime()))) {
+            if (this.xmlHeader === null)
+                log("Xml Head not loaded for file " + this.xmlFile);
+            this.xmlHeader = ApiHelper.getApiHead(this.xmlFile);
+            return true;
+        } else {
+            return (this.xmlHeader && new Date(this.xmlHeader.expires).getTime() < (new Date().getTime())) || 
+                   (this.lastModified.getTime() < new Date(this.xmlHeader.last_modified).getTime());
+        }
+    }
+
+    get lastModified() { return new Date(this.timestamp * 1000); }
+
+    /**
+     * 
+     * @param {Function} methode 
+     */
+    addOnLoadFinished(methode, context) {
+        this.listen("onLoadFinished", methode, context ? context : this, this);
+    }
+    /**
+     * load the object from the Local Storage and loads the object from the api, when an update is availible
+     * @param {Boolean} async 
+     */
+    load(async) {
+        //private load
+        function loadApi(self, async) {
+            if (self.apiUpdateNeeded) {
+                log("Update " + self.xmlFile);
+                var doc = ApiHelper.getApiXml(self.xmlFile, async, self.loadApiFinished, self);
+                if (!async) {
+                    self.loadApiFinished(doc, self);
+                }
+            }
+        }
+        loadApi(this, async);
+        this.forceApiUpdate = false;
+    }
+    /**
+     * 
+     * @param {XMLDocument} doc 
+     * @param {ApiLoader} self 
+     */
+    loadApiFinished(doc, self) {
+        var result = false;
+        if (doc) {
+            self.timestamp = doc.documentElement.getAttribute("timestamp");
+            result = true;
+        }
+        self.fireEvent("onLoadFinished", self);
+        return result;
     }
 }
 
 class XmlSerializer {
     constructor(doc) {
         this.doc = doc;
+        this.apiObject = new ApiLoader();
+        this.parseObject(doc.documentElement, this.obj);
     }
 
-    getParsedValue(value) {
-
+    /**
+     * 
+     * @param {String} value
+     */
+    static getParsedValue(value) {
+        if (!isNaN(value)) {
+            return parseFloat(value);
+        } else if (!isNaN(Date.parse(value))) {
+            return new Date(value);
+        } else {
+            return value;
+        }
     }
     /**
      * 
      * @param {Node} node 
      */
-    getSerializeType(node) {
+    static getSerializeType(node) {
         var result = -1;
-        if (node.hasChildNodes) {
+        if (node.hasChildNodes && node.firstChild && node.firstChild.nodeName !== null && node.firstChild.nodeName !== "#text") {
             result = 2; //object
             var name = node.firstChild.nodeName;
             if (node.getElementsByTagName(name).length > 1) {
@@ -250,20 +465,53 @@ class XmlSerializer {
         }
         return result;
     }
-
-    parseObject(node, obj) {
+    static parseAttributes(node, obj) {
+        if (node.hasAttributes) {
+            for (var i = 0; i < node.attributes.length; i++) {
+                var attr = node.attributes[i];
+                obj[attr.nodeName] = this.getParsedValue(node.getAttribute(attr.nodeName));
+            }
+        }
+    }
+    /**
+     * 
+     * @param {Node} node 
+     * @param {Object} obj 
+     */
+    static parseObject(node, obj) {
+        var i;
         var type = this.getSerializeType(node);
+        var nodeName = node.nodeName.replace("-", "_");
         switch (type) {
-            case 0:
-                obj[node.nodeName] = node.innerHTML;
+            case 0: //one Property
+                obj[nodeName] = this.getParsedValue(node.innerHTML);
                 break;
-            case 1:
-                
+            case 1: //Properties with attributes
+                obj[nodeName] = this.getParsedValue(node.innerHTML);
+                this.parseAttributes(node, obj);
+                break;
+            case 2: //Object
+                obj[nodeName] = {};
+                for (i = 0; i < node.childNodes.length; i++) {
+                    this.parseObject(node.childNodes[i], obj[nodeName]);
+                }
+                this.parseAttributes(node, obj[nodeName]);
+                break;
+            case 3: //List of Objects
+                obj[nodeName] = [];
+                for (i = 0; i < node.childNodes.length; i++) {
+                    var item = {};
+                    this.parseObject(node.childNodes[i], item);
+                    obj[nodeName].push(item);
+                }
+                this.parseAttributes(node, obj);
                 break;
         }
     }
-    serialize(obj) {
-
+    static serialize(doc) {
+        var obj = new ApiLoader();
+        this.parseObject(doc.documentElement, obj);
+        return obj;
     }
 
 }
@@ -349,66 +597,6 @@ class ApiPlanet extends ApiDefaultObject {
     }
 }
 
-class List extends Array {
-    /**
-     * 
-     * @param {String} storageKey 
-     */
-    constructor(storageKey) {
-        super();
-        this.updated = false;
-        this.storageKey = storageKey;
-    }
-
-    add(item) {
-        this.push(item);
-        this.updated = true;
-    }
-    getNewItem(item) {
-        //implement to ovverride
-        return null;
-    }
-    contains(item) {
-        return this.find(el => !el.id && el.id == item.id);
-    }
-    /**
-     * @returns {object} The loaded object from the Local Storage
-     */
-    loadFromLocalStorage() {
-        if (this.storageKey) {
-            var obj = loadFromLocalStorage(this.storageKey);
-            if (obj) {
-                for (var i = 0; i < obj.length; i++) {
-                    var item = this.getNewItem(obj[i]);
-                    this.add(item);
-                }
-                this.updated = false;
-            }
-            return obj;
-        } else {
-            return null;
-        }
-    }
-    remove(item) {
-        var idx = this.findIndex(el => !el.id && el.id == item.id);
-        if (idx > -1)
-            this.splice(idx, 1);
-    }
-    removeFromLocalStorage() {
-        if (this.storageKey)
-            deleteValueLocalStorage(this.storageKey);
-    }
-    saveToLocalStorage() {
-        var result = false;
-        if (this.updated && this.storageKey) {
-            this.updated = false;
-            writeToLocalStorage(this, this.storageKey);
-            result = true;
-        }
-        return result;
-    }
-}
-
 class ApiPlanetList extends List {
     constructor() {
         super();
@@ -443,7 +631,7 @@ class ApiPlayer extends ApiDefaultObject {
     }
 
     loadData() {
-        var doc = OGameAPI.getApiXml("playerData.xml?id=" + this.id, false);
+        var doc = ApiHelper.getApiXml("playerData.xml?id=" + this.id, false);
         this.planets.loadFromXmlDoc(doc);
     }
     parse(node) {
@@ -466,7 +654,7 @@ class ApiPlayer extends ApiDefaultObject {
 class ApiList extends List {
     constructor(storageKey, xmlFile) {
         super(storageKey);
-        this.loadTimestamp = null;
+        this.timestamp = -1;
         this.xmlFile = xmlFile;
     }
 
@@ -478,7 +666,7 @@ class ApiList extends List {
         var file = xmlFile;
         if (!file)
             file = this.xmlFile; 
-        var head = OGameAPI.getApiHead(file);
+        var head = ApiHelper.getApiHead(file);
         return (head && head.date.getTime() > this.loadTimestamp);
     }
     /**
@@ -491,13 +679,15 @@ class ApiList extends List {
         var file = xmlFile;
         if (!file)
             file = this.xmlFile; 
-        OGameAPI.getApiXml(file, async, this.loadFinished, this);
+        var doc = ApiHelper.getApiXml(file, async, this.loadFinished, this);
+        if (!async)
+            this.loadFinished(doc);
     }
     /**
      * will be called after an assynchrone load is done
      * @param {XMLDocument} doc 
      */
-    loadFinished(doc) {
+    loadFinished(doc, self) {
         //implement to override
     }
 }
@@ -617,7 +807,6 @@ class ApiPlayerList extends ApiList {
                         //loadDetails(player);
                     }
                 }
-                log(argThis);
                 break;
             case "playerData":
                 var planets = doc.getElementsByTagName("planets")[0].getElementsByTagName("planet");
@@ -636,11 +825,9 @@ class ApiPlayerList extends ApiList {
     }
 }
 
-class ApiServerSettings extends StoragePropertyLoader {
+class ApiServerSettings extends ApiLoader {
     constructor () {
-        super('ApiServerSettings');
-
-        this.timestamp = null; //api overall
+        super('ApiServerSettings', 'serverData.xml');
         
         this.name = null;
         this.number = -1;
@@ -678,35 +865,27 @@ class ApiServerSettings extends StoragePropertyLoader {
 
     get probeAttacks() { return this.probeCargo > 0; }
 
-    updateNeeded() {
-        var obj = OGameAPI.getApiHead("serverData.xml");
-        return (obj && obj.date && obj.date.getTime() > (new Date(this.timestamp).getTime()));
-    }
-
     load() {
         this.loadFromLocalStorage();
-        if (this.updateNeeded()) {
-            log("serverData.xml update needed");
-            var doc = OGameAPI.getApiXml("serverData.xml", false);
-            if (doc) {
-                this.timestamp = doc.documentElement.getAttribute("timestamp");
-                for (var i = 0; i < doc.documentElement.childNodes.length; i++) {
-                    var child = doc.documentElement.childNodes[i];
-                    if (isNaN(child.innerHTML))
-                        this[child.nodeName] = child.innerHTML;
-                    else {
-                        this[child.nodeName] = parseFloat(child.innerHTML);
-                    }
+        super.load(false);
+    }
+    loadApiFinished(doc, self) {
+        if (super.loadApiFinished(doc, self)) {
+            for (var i = 0; i < doc.documentElement.childNodes.length; i++) {
+                var child = doc.documentElement.childNodes[i];
+                if (isNaN(child.innerHTML))
+                    this[child.nodeName] = child.innerHTML;
+                else {
+                    this[child.nodeName] = parseFloat(child.innerHTML);
                 }
-                this.saveToLocalStorage();
             }
+            self.saveToLocalStorage();
         }
     }
 }
 
-class OGameAPI {
-    constructor() {
-    }
+class ApiHelper {
+    constructor() {}
 
     static get url() {
         return serverUrl + "/api/";
@@ -735,7 +914,7 @@ class OGameAPI {
         var arr = responseHeader.split("\n");
         for (var i = 0; i < arr.length; i++) {
             var values = arr[i].split(": ");
-            var keyName = values[0].toLowerCase();
+            var keyName = values[0].toLowerCase().replace("-", "_");
             if (keyName !== "") {
                 switch (keyName) {
                     case "content-length":
@@ -743,7 +922,7 @@ class OGameAPI {
                         break;
                     case "date":
                     case "expires":
-                    case "last-modified":
+                    case "last_modified":
                         result[keyName] = new Date(values[1]);
                         break;
                     default:
@@ -773,21 +952,135 @@ class OGameAPI {
             return x.responseXML;
         }
     }
+}
 
-    static getOwnPlanets() {
-        var ownPlanets = new ApiPlanetList();
-
-        return ownPlanets;
+class XmlLoader extends ApiLoader {
+    constructor(storageKey, xmlFile) {
+        super(storageKey, xmlFile);
     }
-    static serializeXml(doc, obj) {
 
-        var nodes = doc.documentElement.childNodes;
-        for (var i = 0; i < nodes.length; i++) {
+    /**
+     * 
+     * @param {Boolean} async 
+     */
+    load(async) {
+        super.load(async);
+    }
+    loadApiFinished(doc, self) {
+        XmlSerializer.parseObject(doc.documentElement, self);
+        super.loadApiFinished(doc, self);
+    }
+}
 
+class OGameAPI extends ObservableObject {
+    /**
+     * 
+     * @param {Boolean} async 
+     */
+    constructor(async) {
+        super();
+        this.async = async ? true : false;
+        this.loadCount = -1;
+        this.alliances = this._initLoader("API_Alliances", "alliances.xml");
+        this.localization = this._initLoader("API_Localization", "localization.xml");
+        this.players = this._initLoader("API_Players", "players.xml");
+        this.serverData = this._initLoader("API_ServerData", "serverData.xml");
+        this.universe = this._initLoader("API_Universe", "universe.xml");
+        this.universes = this._initLoader("API_Universes", "universes.xml");
+
+        this.loadFromLocalStorage();
+    }
+
+    get forceApiUpdate() {
+        return this.alliances.forceApiUpdate || this.localization.forceApiUpdate ||
+               this.players.forceApiUpdate || this.serverData.forceApiUpdate ||
+               this.universe.forceApiUpdate || this.universes.forceApiUpdate;
+    }
+
+    set forceApiUpdate(value) {
+        this.alliances.forceApiUpdate = value;
+        this.localization.forceApiUpdate = value;
+        this.players.forceApiUpdate = value;
+        this.serverData.forceApiUpdate = value;
+        this.universe.forceApiUpdate = value;
+        this.universes.forceApiUpdate = value;
+    }
+
+    /**
+     * 
+     * @param {XmlLoader} loader
+     * @param {String} storageKey 
+     * @param {String} xmlFile 
+     */
+    _initLoader(storageKey, xmlFile) {
+        var loader = new XmlLoader(storageKey, xmlFile);
+        loader.addOnLoadFinished(this.loadXmlFinished, this);
+        return loader;
+    }
+    /**
+     * 
+     * @param {XmlLoader} loader 
+     * @param {Boolean} async 
+     */
+    _loadXml(loader) {
+        loader.load(this.async);
+        if (this.async) {
+            this.loadCount++;
         }
     }
-    static searchPlayerByCoords(coord) {
-
+    loadAll() {
+        this._loadXml(this.alliances);
+        this._loadXml(this.localization);
+        this._loadXml(this.players);
+        this._loadXml(this.serverData);
+        this._loadXml(this.universe);
+        this._loadXml(this.universes);
+    }
+    /**
+     * Load the localaization and the server data synchron
+     */
+    loadServerSettings() {
+        this.localization.load(false);
+        this.serverData.load(false);
+    }
+    /** Will be called, if all async load processes are done */
+    loadFinished() {
+        this.fireEvent("onLoadFinished", null, this);
+        this.saveToLocalStorage();
+    }
+    loadFromLocalStorage() {
+        this.alliances.loadFromLocalStorage();
+        this.localization.loadFromLocalStorage();
+        this.players.loadFromLocalStorage();
+        this.serverData.loadFromLocalStorage();
+        this.universe.loadFromLocalStorage();
+        this.universes.loadFromLocalStorage();
+    }
+    /**
+     * will be called after a load of a xml is finished
+     * @param {XmlLoader} observable 
+     */
+    loadXmlFinished(observable, eventType, data) {
+        try {
+            if (this.loadCount > -1 && this.async)
+                this.loadCount--;
+            this.fireEvent("onLoadXmlFinished", data, this);
+            //do somethings
+            if (this.loadCount == -1 && this.async) {
+                this.loadFinished();
+            }
+            observable.saveToLocalStorage();
+        } catch (e) {
+            console.error("Error on loadXmlFinished: " + e);
+        }
+    }
+    saveToLocalStorage() {
+        this.alliances.saveToLocalStorage();
+        this.localization.saveToLocalStorage();
+        this.players.saveToLocalStorage();
+        this.serverData.saveToLocalStorage();
+        this.universe.saveToLocalStorage();
+        this.universes.saveToLocalStorage();
     }
 }
 
@@ -1100,6 +1393,9 @@ class ReportList {
         this.reports = [];
         this.updated = true;
     }
+    contains(report) {
+        return this.reports.find(el => el.info.equal(report.info));
+    }
     /**
      * 
      */
@@ -1192,7 +1488,7 @@ class ReportList {
             this.sortByDateDesc();
             this.deleteOldReports(this._deleteDate);
             if (this.updated) {
-                log("save " + this._storageKey);
+                this.updated = false;
                 writeToLocalStorage(this, this._storageKey);
                 result = true;
             }
@@ -1298,6 +1594,7 @@ class CombatReport extends Report {
         this.defenderInactive = false;
         this.defenderName = 'Unknown';
         this.details = null;
+        this.detailsLoad = false;
         this.fleetIds = null;
         this.isAttacker = null;
         this.isDefender = null;
@@ -1411,7 +1708,7 @@ class CombatReport extends Report {
         return result;
     }
     getDetails() {
-        if (this.info.id && !this.details)
+        if (this.info.id && !this.details && this.defenderName != "Unknown" && !this.detailsLoad)
         {
             getMessageDetailsAsync(this.info.id);
             main.combatReports.detailsLoadCount++;
@@ -1472,7 +1769,7 @@ class CombatReport extends Report {
         return result;
     }
     isBash() {
-        if (serverData.probeAttacks)
+        if (ogameApi.serverData.probeAttacks)
             return parseInt(this.status) > parseInt(bashState.ESPIONAGE_NO_DETAILS);
         else
             return parseInt(this.status) > parseInt(bashState.ESPIONAGE_PROBE_ATTACK);
@@ -1560,14 +1857,9 @@ class CombatReportList extends ReportList {
      * @param {CombatReport} report 
      */
     add(report) {
-        var result = this.reports.findIndex(el => el.info.equal(report.info)) == -1;
-        if (result) {
-            log("combat report added");
-            this.reports.push(report);
-            this.updated = true;
-            if (report.defenderName && !report.details) {
-                report.getDetails();
-            }
+        var result = super.add(report);
+        if (report.defenderName && !report.details) {
+            report.getDetails();
         }
         return result;
     }
@@ -1677,9 +1969,10 @@ class Attacks {
         obj.moon = this.moon;
         var json = JSON.stringify(obj).replaceAll('"', '&quot;');
         var defenderSpan = '<span style="font-weight: bold; color: grey;display: inline-block;float: center;text-align: center" data-info="' + json + '">' + this.defenderName + '</span>';
+        if (this.moon) {
+            defenderSpan += '<img src="' + MOON_GIF_SRC + '" style="height: 14px; width: 14px;float: right;">';
+        }
         var btn = createButton(defenderSpan, "attackTrackerButton");
-        if (this.moon)
-            defenderSpan += '<img src="https://github.com/GeneralAnasazi/OGame-CheckAttack/raw/master/Moon.gif" style="height: 14px; width: 14px;float: right;">';
         return '<a title="' + this.getTimesStr() + ' (time in UTC)" href="' + coordToUrl(this.coord) + '" style="display: inline-block;width: 58px;text-align: left">' + this.coord + '</a>' + btn.outerHTML + '<br/>';
     }
 }
@@ -1907,7 +2200,6 @@ class FarmList {
     loadFromLocalStorage() {
         if (this._storageKey) {
             var obj = loadFromLocalStorage(this._storageKey);
-            log(obj);
             if (obj) {
                 for (var i = 0; i < obj.items.length; i++) {
                     var farm = new Farm();
@@ -2309,8 +2601,8 @@ class SpyReportList extends ReportList {
             idx = this.reports.findIndex(el => el.info.equalWithoutApi(report.info));
             if (idx > -1) {
                 // spy report has the same time and coords as the combat report
-                if (report.onlyEspionageProbe())
-                    result = bashState.ESPIONAGE_PROBE_ATTACK;
+                if (report.onlyEspionageProbe() && parseInt(report.details.mission) == missionState.ESPIONAGE)
+                    result = bashState.ONLY_ESPIONAGE_PROBES;
                 else
                     result = bashState.ESPIONAGE_ATTACK;
             }
@@ -2346,10 +2638,10 @@ class SpyReportList extends ReportList {
                     result = bashState.INACTIVE_PLAYER;
                 else {
                     // total lost will count only on probe with cargo universes
-                    if (serverData.probeAttacks)
+                    if (ogameApi.serverData.probeAttacks)
                         result = bashState.NO_DETAILS;
                     else
-                        result = ESPIONAGE_NO_DETAILS;
+                        result = bashState.ESPIONAGE_NO_DETAILS;
                 }
             }
         }
@@ -2363,7 +2655,7 @@ class SpyReportList extends ReportList {
         var result = false;
         // try to find the nearest spy report (max 1 day backwards)
         var lastSearchDate = getBashTimespan();
-        lastSearchDate.addHours(-1);
+        lastSearchDate.addHours(-3);
         var filterArr = this.reports.filter(el => report.info.date.getTime() > el.info.date.getTime() &&
             (el.info.coord == report.info.coord || el.playerName == report.defenderName) &&
             el.info.date.getTime() > lastSearchDate.getTime());
@@ -2371,7 +2663,11 @@ class SpyReportList extends ReportList {
         // has filter results and is inactive
         if (filterArr[0] && filterArr[0].inactive) {
             result = true;
+        } else if (ogameApi.players) {
+            var idx = ogameApi.players.players.findIndex(el => el.name == report.defenderName);
+            result = (idx > -1) && (ogameApi.players.players[idx].status && ogameApi.players.players[idx].status.toLowerCase() == "i");
         }
+
         return result;
     }
     /**
@@ -2478,9 +2774,6 @@ class TotalRessources {
 }
 
 //#endregion
-
-var sendFleetList = new SendFleetList();
-var sendFleetPage = -1;
 
 //#region global Objects
 // async object
@@ -2600,7 +2893,7 @@ var main = {
             this.farms.addRange(this.combatReports);
             this.farms.addRange(this.recycleReports);
         }
-        log(this.farms);
+        //log(this.farms);
     },
     save: function() {
         this.spyReports.saveToLocalStorage();
@@ -2722,9 +3015,10 @@ var ressourceTitles = {
 };
 
 // settings object
+var ogameApi = new OGameAPI(false);
+var sendFleetList = new SendFleetList();
+var sendFleetPage = -1;
 var settings = new CASettings();
-var serverData = new ApiServerSettings();
-log("espionage probe attacks count as an bash attack: " + serverData.probeAttacks);
 
 //#endregion
 
@@ -2734,27 +3028,17 @@ function testIt() {
         try
         {
             //getLocalStorageSize(DEBUG);
-
-            //var localization = new ApiLocalizationList();
-            //localization.load();
-
-            //var playerData = new ApiPlayerList();
-            //playerData.loadFromLocalStorage();
-            //if (playerData.length === 0) {
-            //    playerData.load();
-            //    playerData.saveToLocalStorage();
-            //}
-            //log(playerData);
-
         }
-        catch (ex)
-        {
+        catch (ex) {
             console.log("Error Test Function: " + ex);
         }
     }
 }
 
-// log a message to console, if debug is true
+/**
+ * log a message to console, if debug is true
+ * @param {Object} msg 
+ */
 function log(msg)
 {
     if (DEBUG)
@@ -2994,6 +3278,7 @@ function display() {
     {
         log(main);
         var attackTracker = main.combatReports.getAttacks();
+        log(attackTracker);
         var coordByNbAttaque = {};
         var isGood =true;
         var i;
@@ -3358,10 +3643,12 @@ function getMessageDetailsAsync(msgId) {
                                         var json = firstSplit.split("');")[0];
                                         main.combatReports.reports[idx].details = jQuery.parseJSON(json);
                                         main.combatReports.reports[idx].detailsLoaded(main.spyReports, main.combatReports);
-                                        main.combatReports.updated = true;
                                     }
                                 }
+                                main.combatReports.reports[idx].detailsLoad = true;
+                                main.combatReports.updated = true;
                             }
+
                         }
                         div.innerHTML = '';
                     }
@@ -3480,7 +3767,13 @@ function loadData()
 {
     try 
     {
-        localeSettings.load();
+        // init api files
+        ogameApi.forceApiUpdate = false;
+        ogameApi.loadServerSettings();
+        ogameApi.players.load(false);
+        log(ogameApi);
+
+        localeSettings.load(); //not needed
         translate();
         settings.loadFromLocalStorage();
         main.load();
@@ -3503,13 +3796,12 @@ function loadFromLocalStorage(key)
     var json = window.localStorage.getItem('CheckAttack_' + key);
     if (json != 'no value' && json)
     {
-        try
+        try 
         {
             result = JSON.parse(json);
         }
-        catch (ex)
-        {
-            console.log('Error on loadFromLocalStorage(' + key + '): ' + ex);
+        catch (ex) {
+            console.error('Error on loadFromLocalStorage(' + key + '): ' + ex);
         }
     }
     return result;
@@ -3550,12 +3842,14 @@ function onLoadPage()
                         if (isCombatReport(msgList[i]))
                         {
                             var combatReport = new CombatReport(msgList[i]);
-                            if (combatReport.defenderName == "Unknown")
-                            {
-                                if (combatReport.detailsLoaded(main.spyReports, main.combatReports))
-                                    main.combatReports.updated = true;
+                            if (!main.combatReports.contains(combatReport)) {
+                                if (combatReport.defenderName == "Unknown")
+                                {
+                                    if (combatReport.detailsLoaded(main.spyReports, main.combatReports))
+                                        main.combatReports.updated = true;
+                                }
+                                main.combatReports.add(combatReport);
                             }
-                            main.combatReports.add(combatReport);
                         }
                         else // look for other reports
                         {
@@ -3793,7 +4087,7 @@ function startScript()
         // button for checking
         var btn = createButton("Check Raid", "menubutton");
         btn.addEventListener('click', function(){ loadInfo() ;}, false); //background-color: rgba(255, 255, 255, 0.9); 
-        var icon = '<img height="26" width="26" alt="Settings" src="data:image/png;base64,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" />';
+        var icon = '<img height="26" width="26" alt="Settings" src="' + ICO_CHECK_ATTACK + '" />';
         var btnSettings = createButton('<div style="overflow: hidden; width: 26px; height: 26px; border-radius: 5px;"><div style="border: 1px solid black; border-radius: 5px; width: 26px; height: 26px;">'+icon+'</div></div>', "");
         var span = document.createElement("span");
         span.className = "menu_icon";
@@ -3813,6 +4107,7 @@ function startScript()
         document.body.appendChild(dialogDiv);
 
         loadData();
+        
         setInterval(onLoadPage, 400);
         display();
 
@@ -3869,7 +4164,11 @@ function versionCheck()
     }
 }
 
-/** write an object to the local storage */
+/** 
+ * write an object to the local storage 
+ * @param {Object} obj
+ * @param {String} key the storage key
+ * */
 function writeToLocalStorage(obj, key)
 {
     var json = JSON.stringify(obj);
@@ -3878,7 +4177,9 @@ function writeToLocalStorage(obj, key)
         var testObj = JSON.parse(json);
         window.localStorage.setItem('CheckAttack_' + key, json);
     }
-    catch (ex) {} // do nothing, but prevent error messages
+    catch (ex) {
+        console.error("Error on writeToLocalStorage: " + ex);
+    } 
 }
 
 //#endregion
