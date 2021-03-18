@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.4.0.10
+// @version 3.4.0.11
 // @grant       GM_xmlhttpRequest
 // @require     http://ajax.googleapis.com/ajax/libs/jquery/2.1.0/jquery.min.js
 
@@ -25,7 +25,7 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to be set after an update
-const VERSION_SCRIPT = '3.4.0.10';
+const VERSION_SCRIPT = '3.4.0.11';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.4.0.0';
 
@@ -2071,13 +2071,13 @@ class Farm {
         this.name = "";
         this.playerId = -1;
         this.updated = false;
-        
+
         this.setValues(obj);
     }
 
     /**
-     * 
-     * @param {Report} report 
+     *
+     * @param {Report} report
      */
     add(report) {
         var result = false;
@@ -2095,9 +2095,9 @@ class Farm {
         return result;
     }
     /**
-     * 
-     * @param {Date} startDate 
-     * @param {Date} endDate 
+     *
+     * @param {Date} startDate
+     * @param {Date} endDate
      */
     calc(startDate, endDate) {
         var result = new Ressources();
@@ -2214,8 +2214,8 @@ class FarmList {
             return null;
     }
     /**
-     * 
-     * @param {Report[][]} groupedReports 
+     *
+     * @param {Report[][]} groupedReports
      */
     load(groupedReports) {
         for (var i = 0; i < groupedReports.length; i++) {
@@ -2261,10 +2261,10 @@ class FarmReport extends Report {
             return "";
     }
     /**
-     * 
-     * @param {Farm} farm 
-     * @param {Date} startDate 
-     * @param {Date} endDate 
+     *
+     * @param {Farm} farm
+     * @param {Date} startDate
+     * @param {Date} endDate
      */
     load(farm, startDate, endDate) {
         if (farm) {
@@ -2280,8 +2280,8 @@ class FarmReport extends Report {
 
 class RecycleReport extends Report {
     /**
-     * 
-     * @param {HTMLElement} msg 
+     *
+     * @param {HTMLElement} msg
      */
     constructor(msg) {
         super();
@@ -2333,8 +2333,8 @@ class RecycleReport extends Report {
         }
     }
     /**
-     * 
-     * @param {RecycleReport} report 
+     *
+     * @param {RecycleReport} report
      */
     setValues(report) {
         super.setValues(report); //inherited
@@ -2347,8 +2347,8 @@ class RecycleReportList extends ReportList {
     }
 
     /**
-     * 
-     * @param {RecycleReportList} obj 
+     *
+     * @param {RecycleReportList} obj
      */
     setValues(obj) {
         for (var i = 0; i < obj.reports.length; i++) {
@@ -2360,10 +2360,10 @@ class RecycleReportList extends ReportList {
 }
 
 class SendFleet {
-    
+
     /**
-     * 
-     * @param {String} storageKey 
+     *
+     * @param {String} storageKey
      */
     constructor(storageKey) {
         this.deuterium = null;
@@ -2373,7 +2373,7 @@ class SendFleet {
         this.page = null;
         this.ships = {};
         this.storageKey = null;
-        
+
         if (storageKey) {
             this.storageKey = storageKey;
             this.read();
@@ -3165,7 +3165,7 @@ function coordToUrl(coord)
 {
 	 var coordClean = coord.substring(1, coord.length-1);
 	 var coordTab = coordClean.split(":");
-	 return serverUrl + '/game/index.php?page=galaxy&galaxy='+coordTab[0]+'&system='+coordTab[1]+'&position='+coordTab[2] ;
+	 return serverUrl + '/game/index.php?page=ingame&component=galaxy&galaxy='+coordTab[0]+'&system='+coordTab[1]+'&position='+coordTab[2] ;
 }
 
 function checkAttackSendShips()
