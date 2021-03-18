@@ -5,7 +5,7 @@
 // @description Plug in anti bash
 // @include *ogame.gameforge.com/game/*
 // @include about:addons
-// @version 3.4.0.9
+// @version 3.4.0.10
 // @grant       GM_xmlhttpRequest
 // @require     http://ajax.googleapis.com/ajax/libs/jquery/2.1.0/jquery.min.js
 
@@ -25,13 +25,13 @@ const DIV_STATUS_ID = "id_check_attack";
 const LINKS_TOOLBAR_BUTTONS_ID = "links";
 const SPAN_STATUS_ID = "id_check_attack_status";
 // has to be set after an update
-const VERSION_SCRIPT = '3.4.0.9';
+const VERSION_SCRIPT = '3.4.0.10';
 // set VERSION_SCRIPT_RESET to the same value as VERSION_SCRIPT to force a reset of the local storage
 const VERSION_SCRIPT_RESET = '3.4.0.0';
 
 // debug consts
 const RELEASE = true;
-const DEBUG = true && !RELEASE; // set it to true enable debug messages -> log(msg)
+const DEBUG = false && !RELEASE; // set it to true enable debug messages -> log(msg)
 const RESET_COOKIES = false && !RELEASE;
 
 // images/icons
@@ -1137,6 +1137,25 @@ class Ressources {
     get isEmpty() {
         return this.metal === 0 && this.crystal === 0 && this.deuterium === 0;
     }
+    get localeMetal() {
+        return this.localeRess(this.metal);
+    }
+    get localeCrystal() {
+        return this.localeRess(this.crystal);
+    }
+    get localeDeuterium() {
+        return this.localeRess(this.deuterium);
+    }
+    get localeTotal() {
+        return this.localeRess(this.total);
+    }
+    localeRess(ressource) {
+        var ress = 0;
+        if (ressource) {
+            ress = ressource;
+        }
+        return ress.toLocaleString();
+    }
     /**
      * 
      * @param {HTMLSpanElement} span 
@@ -1172,10 +1191,18 @@ class Ressources {
     setValues(obj) {
         if (obj)
         {
-            this.metal = obj.metal;
-            this.crystal = obj.crystal;
-            this.deuterium = obj.deuterium;
-            this.total = obj.total;
+            if (obj.metal) {
+                this.metal = obj.metal;
+            }
+            if (obj.crystal) {
+                this.crystal = obj.crystal;
+            }
+            if (obj.deuterium) {
+                this.deuterium = obj.deuterium;
+            }
+            if (obj.total) {
+                this.total = obj.total;
+            }
         }
     }
     /**
@@ -1189,10 +1216,10 @@ class Ressources {
         if (title && className)
         {
             var spanAttr = 'style="padding: 9px;"';
-            var innerHtml = getSpanHtml(ressourceTitles.metal + ': ' + this.metal.toLocaleString(), spanAttr) + '</br>';
-            innerHtml += getSpanHtml(ressourceTitles.crystal + ': ' + this.crystal.toLocaleString(), spanAttr) + '</br>';
-            innerHtml += getSpanHtml(ressourceTitles.deuterium + ': ' + this.deuterium.toLocaleString(), spanAttr) + '</br>';
-            innerHtml += getSpanHtml(ressourceTitles.total + ': ' + this.total.toLocaleString(), spanAttr) + '</br>';
+            var innerHtml = getSpanHtml(ressourceTitles.metal + ': ' + this.localeMetal, spanAttr) + '</br>';
+            innerHtml += getSpanHtml(ressourceTitles.crystal + ': ' + this.localeCrystal, spanAttr) + '</br>';
+            innerHtml += getSpanHtml(ressourceTitles.deuterium + ': ' + this.localeDeuterium, spanAttr) + '</br>';
+            innerHtml += getSpanHtml(ressourceTitles.total + ': ' + this.localeTotal, spanAttr) + '</br>';
             result = getTitle(className, title, titleClick, innerHtml);
         }
         return result;
@@ -1315,7 +1342,7 @@ class Report {
         else
             ress.add(this.ressources);
         ress.dec(this.ressourcesLost);
-        
+
         var name = "";
         if (this.defenderName)
             name = this.defenderName;
@@ -1326,7 +1353,7 @@ class Report {
             coord = this.info.coordUrl;
             date = formatDate(this.info.date);
         }
-        return '<tr><td>'+name+'</td><td>'+coord+'</td><td>'+date+'</td><td>'+ress.metal.toLocaleString()+'</td><td>'+ress.crystal.toLocaleString()+'</td><td>'+ress.deuterium.toLocaleString()+'</td></tr>';
+        return '<tr><td>'+name+'</td><td>'+coord+'</td><td>'+date+'</td><td>'+ress.localeMetal+'</td><td>'+ress.localeCrystal+'</td><td>'+ress.localeDeuterium+'</td></tr>';
     }
 	//pseudo private => implemented to use it for an inhertited function
     setValues(report) {
@@ -2229,7 +2256,7 @@ class FarmReport extends Report {
 
     getRow() {
         if (!this.ressources.isEmpty)
-            return '<tr><td>' + this.name + '</td><td>' + this.ressources.metal.toLocaleString() + '</td><td>' + this.ressources.crystal.toLocaleString() + '</td><td>' + this.ressources.deuterium.toLocaleString() + '</td></tr>';
+            return '<tr><td>' + this.name + '</td><td>' + this.ressources.localeMetal + '</td><td>' + this.ressources.localeCrystal + '</td><td>' + this.ressources.localeDeuterium + '</td></tr>';
         else
             return "";
     }
@@ -2700,6 +2727,14 @@ class TotalRessources {
         log('calcReports: ' + date);
         for (var i = 0; i < reportList.reports.length; i++) {
             var report = reportList.reports[i];
+            //error handling
+            if (!report.ressources) {
+                var error = 'Combat report read error ';
+                if (report.info) {
+                    error += 'report.id: ' + report.info.id + ' apiKey: ' + report.info.apiKey;
+                }
+                console.error(error);
+            } else
             if (report.info.date > date) {
                 var ress = null;
                 if (report.details && report.ressourcesLoot)
@@ -2873,8 +2908,8 @@ var main = {
         result.addRange(this.combatReports);
         result.addRange(this.recycleReports);
         if (info) {
-            var filterFunc = el =>  el.info && el.info.date.getTime() > info.date.getTime() && 
-                                    (el.info.coord == info.coord || info.coord === null) && 
+            var filterFunc = el =>  el.info && el.info.date.getTime() > info.date.getTime() &&
+                                    (el.info.coord == info.coord || info.coord === null) &&
                                     (el.info.moon == info.moon || el.defenderName == undefined);
             result.filterReports(filterFunc);
         }
@@ -2912,7 +2947,7 @@ var main = {
             reportList.add(new FarmReport(this.farms.items[i], startDate, endDate));
         }
         reportList.sortByRessources(true);
-        
+
         var total = new FarmReport();
         total.name = "Total";
         total.ressources = new Ressources();
@@ -3277,6 +3312,9 @@ function display() {
     try
     {
         log(main);
+        if (DEBUG) {
+            main.calc();
+        }
         var attackTracker = main.combatReports.getAttacks();
         log(attackTracker);
         var coordByNbAttaque = {};
@@ -3363,7 +3401,7 @@ function display() {
         var buttonList = document.getElementsByClassName("attackTrackerButton");
         for (i = 0; i < buttonList.length; i++)
         {
-            buttonList[i].addEventListener('click', function(event){ 
+            buttonList[i].addEventListener('click', function(event){
                 var sourceElement = event.srcElement || event.target || {};
                 var attr = sourceElement.getAttribute("data-info");
                 if (attr)
@@ -3377,7 +3415,7 @@ function display() {
                     main.combatReports.show(el => el.defenderName == sourceElement.innerText);
             }, false);
         }
-        
+
         addEventListener("Total-RessourcesClick", function() {
             var reports = main.getRessourceReports(null);
             reports.sortByDateDesc();
@@ -3440,8 +3478,10 @@ function extractRess(res)
     else
         res = res.replace(/\./g,'');
 
-
-    return parseInt(res);
+    if (res != null)
+        return parseInt(res);
+    else
+        return 0;
 }
 
 function flatten(obj) {
@@ -3482,7 +3522,7 @@ function getLabeledInput(id, caption, value, readonly)
 
 /**
  * return the local storage size in KB
- * @param {boolean} details 
+ * @param {boolean} details
  */
 function getLocalStorageSize(details)
 {
@@ -3784,9 +3824,9 @@ function loadData()
             settings.lastCheckSpyReport = getBashTimespan();
             loadInfo();
         }
-    } 
+    }
     catch (ex) {
-        console.log("Error on loadData: " + ex);    
+        console.log("Error on loadData: " + ex);
     }
 }
 
@@ -3796,7 +3836,7 @@ function loadFromLocalStorage(key)
     var json = window.localStorage.getItem('CheckAttack_' + key);
     if (json != 'no value' && json)
     {
-        try 
+        try
         {
             result = JSON.parse(json);
         }
@@ -4129,7 +4169,7 @@ function translate()
             setTranslationVars('Verlauf des Risikos', 'jmd. zu Bashen', 'Risiko jmd. zu Bashen', 'Angriff', 'Angriffe');
             break;
         case 'en':
-            setTranslationVars('Way to risk', 'to bash', 'Risk to bash', 'attack', 'attacks');
+            setTranslationVars('Way of risk', 'to bash', 'Risk to bash', 'attack', 'attacks');
             confirmResetData = 'You are really sure to reset all the data?';
             settingsDialogCaption = 'Settings';
             break;
@@ -4137,7 +4177,7 @@ function translate()
             setTranslationVars('Pas de risque', 'de bash', 'Risque de bash', 'attaque', 'attaques');
             break;
         default:
-            setTranslationVars('Way to risk', 'to bash', 'Risk to bash', 'attack', 'attacks');
+            setTranslationVars('Way of risk', 'to bash', 'Risk to bash', 'attack', 'attacks');
             break;
     }
 }
@@ -4164,8 +4204,8 @@ function versionCheck()
     }
 }
 
-/** 
- * write an object to the local storage 
+/**
+ * write an object to the local storage
  * @param {Object} obj
  * @param {String} key the storage key
  * */
